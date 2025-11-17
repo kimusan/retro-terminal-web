@@ -99,6 +99,13 @@ body {
     font-size: 0.9em;
 }
 
+.terminal-measure {
+    position: absolute;
+    visibility: hidden;
+    pointer-events: none;
+    white-space: pre;
+}
+
 @media (max-width: 600px) {
     #terminal {
         font-size: 14px;

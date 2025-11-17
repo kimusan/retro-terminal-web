@@ -12,6 +12,8 @@ class RetroTerminal {
         this.currentInputEl = null;
         this.cursorEl = null;
         this.lessState = null;
+        this.charWidth = null;
+        this.terminalCols = 80;
 
         this.apiBase = 'api.php';
         this.dirCache = {};
@@ -27,6 +29,7 @@ class RetroTerminal {
 
         document.addEventListener('keydown', (e) => this.handleKeydown(e));
         window.addEventListener('resize', () => this.handleResize());
+        this.updateTerminalMetrics();
     }
 
     async runFakeSSHSequence() {
@@ -536,7 +539,7 @@ class RetroTerminal {
                 if (data.type === 'markdown' || data.type === 'text') {
                     this.printLine(data.content || '');
                 } else if (data.type === 'image') {
-                    const width = 80;
+                    const width = this.getAsciiWidth();
                     const imgUrl = `${this.apiBase}?action=image-ansi&path=${encodeURIComponent(virtualPath)}&width=${width}`;
                     return fetch(imgUrl)
                         .then(r => r.json())
@@ -722,9 +725,47 @@ class RetroTerminal {
     }
 
     handleResize() {
+        this.updateTerminalMetrics();
         if (this.lessState) {
             this.updateLessViewport();
         }
+    }
+
+    measureCharWidth() {
+        if (this.charWidth) {
+            return this.charWidth;
+        }
+        const measure = document.createElement('span');
+        measure.className = 'terminal-measure';
+        measure.textContent = 'MMMMMMMMMM';
+        this.rootEl.appendChild(measure);
+        const width = measure.getBoundingClientRect().width;
+        this.rootEl.removeChild(measure);
+        const perChar = width > 0 ? width / measure.textContent.length : 8;
+        this.charWidth = perChar || 8;
+        return this.charWidth;
+    }
+
+    calculateTerminalCols() {
+        const width = this.rootEl.clientWidth || window.innerWidth || 800;
+        const charWidth = this.measureCharWidth();
+        if (!charWidth) {
+            return 80;
+        }
+        return Math.max(40, Math.floor(width / charWidth));
+    }
+
+    updateTerminalMetrics() {
+        this.charWidth = null;
+        this.terminalCols = this.calculateTerminalCols();
+    }
+
+    getAsciiWidth() {
+        if (!this.terminalCols) {
+            this.updateTerminalMetrics();
+        }
+        const cols = this.terminalCols || 80;
+        return Math.max(20, Math.min(200, cols - 2));
     }
 }
 

@@ -30,6 +30,7 @@ Perfect for:
 * Blinking cursor, auto-scroll, editable prompt
 * Command history (`↑` / `↓`)
 * Tab completion for commands & filenames
+* Responsive layout recalculates pager height + ASCII art width on resize
 
 ### **📁 Filesystem-Driven Content**
 

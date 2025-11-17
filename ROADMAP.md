@@ -78,7 +78,7 @@ A structured implementation roadmap for the retro-themed terminal website, actin
   * paging UI
   * navigation (space, j/k, q)
   * fixed-height reading area
-* **Terminal resizing awareness**
+* **Terminal resizing awareness** ✅ *Done*
 
   * auto-adjust ASCII-art width
   * responsive wrapping
