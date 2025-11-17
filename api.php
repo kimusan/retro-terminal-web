@@ -136,6 +136,10 @@ switch ($action) {
             $name = $fileinfo->getFilename();
             $ext  = strtolower(pathinfo($name, PATHINFO_EXTENSION));
 
+            if ($name === '_meta') {
+                continue;
+            }
+
             if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp'], true)) {
                 $type = 'image';
             }

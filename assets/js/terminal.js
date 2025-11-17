@@ -10,6 +10,7 @@ class RetroTerminal {
         this.history = [];
         this.historyIndex = -1;
         this.currentInputEl = null;
+        this.cursorEl = null;
 
         this.apiBase = 'api.php';
         this.dirCache = {};
@@ -66,7 +67,16 @@ class RetroTerminal {
         motdLines.forEach(l => this.printLine(l, 'terminal-dim'));
     }
 
+    removeActiveCursor() {
+        if (this.cursorEl && this.cursorEl.parentElement) {
+            this.cursorEl.parentElement.removeChild(this.cursorEl);
+        }
+        this.cursorEl = null;
+    }
+
     newPrompt() {
+        this.removeActiveCursor();
+
         const lineEl = document.createElement('div');
         lineEl.className = 'terminal-line';
 
@@ -85,6 +95,7 @@ class RetroTerminal {
         const cursorSpan = document.createElement('span');
         cursorSpan.className = 'cursor';
         lineEl.appendChild(cursorSpan);
+        this.cursorEl = cursorSpan;
 
         this.rootEl.appendChild(lineEl);
         this.scrollToBottom();
@@ -336,6 +347,7 @@ class RetroTerminal {
 
     cmdClear() {
         this.rootEl.innerHTML = '';
+        this.cursorEl = null;
     }
 
     cmdPwd() {

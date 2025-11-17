@@ -1,10 +1,3 @@
-Here is a polished and complete **CONTENT_GUIDE.md** written specifically for your retro terminal website project.
-If you want this added to the ZIP, just say *“add it to the project”*.
-
----
-
-# **CONTENT_GUIDE.md**
-
 ### *How to Manage Content for the Retro Terminal Website*
 
 This document explains how to structure and maintain all content displayed inside the simulated terminal environment.
