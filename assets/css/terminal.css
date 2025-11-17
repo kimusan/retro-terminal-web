@@ -1,0 +1,75 @@
+/* assets/css/terminal.css */
+
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: #000;
+    color: #0f0;
+    font-family: "Fira Code", "Consolas", "Menlo", "DejaVu Sans Mono", monospace;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+}
+
+#terminal {
+    box-sizing: border-box;
+    padding: 10px;
+    height: 100vh;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    tab-size: 4;
+}
+
+.terminal-line {
+    line-height: 1.4;
+}
+
+.terminal-prompt {
+    display: inline;
+}
+
+.terminal-input {
+    display: inline;
+    outline: none;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    min-width: 1px;
+}
+
+.cursor {
+    display: inline-block;
+    width: 8px;
+    height: 1.1em;
+    background: #0f0;
+    margin-left: 2px;
+    animation: blink 1s step-end infinite;
+    vertical-align: text-bottom;
+}
+
+@keyframes blink {
+    from, to { opacity: 0; }
+    50% { opacity: 1; }
+}
+
+.terminal-banner {
+    color: #0f0;
+}
+
+.terminal-error {
+    color: #f55;
+}
+
+.terminal-dim {
+    color: #0a0;
+}
+
+@media (max-width: 600px) {
+    #terminal {
+        font-size: 14px;
+    }
+}

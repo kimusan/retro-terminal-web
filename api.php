@@ -1,0 +1,223 @@
+<?php
+// api.php
+//
+// JSON API for the Retro Terminal.
+
+header('Content-Type: application/json; charset=utf-8');
+
+$config = require __DIR__ . '/config.php';
+
+function respond($data, int $code = 200) {
+    http_response_code($code);
+    echo json_encode($data);
+    exit;
+}
+
+$contentRoot = realpath($config['content_root'] ?? (__DIR__ . '/content'));
+if ($contentRoot === false) {
+    respond(['error' => 'Content root not found.'], 500);
+}
+
+function resolve_path(string $virtualPath, string $contentRoot): ?string
+{
+    $virtualPath = trim($virtualPath);
+    if ($virtualPath === '' || $virtualPath[0] !== '/') {
+        $virtualPath = '/' . ltrim($virtualPath, '/');
+    }
+
+    $relative = ltrim($virtualPath, '/');
+    $candidate = $contentRoot . DIRECTORY_SEPARATOR . $relative;
+    $real = realpath($candidate);
+
+    if ($real === false) {
+        return null;
+    }
+
+    if (strpos($real, $contentRoot) !== 0) {
+        return null;
+    }
+
+    return $real;
+}
+
+function load_image_resource(string $path)
+{
+    $info = @getimagesize($path);
+    if ($info === false) {
+        return null;
+    }
+
+    $mime = $info['mime'] ?? '';
+    switch ($mime) {
+        case 'image/png':
+            return @imagecreatefrompng($path);
+        case 'image/jpeg':
+            return @imagecreatefromjpeg($path);
+        case 'image/gif':
+            return @imagecreatefromgif($path);
+        case 'image/webp':
+            if (function_exists('imagecreatefromwebp')) {
+                return @imagecreatefromwebp($path);
+            }
+            return null;
+        default:
+            return null;
+    }
+}
+
+function image_to_ascii(string $path, int $targetWidth = 80): ?string
+{
+    $im = load_image_resource($path);
+    if (!$im) {
+        return null;
+    }
+
+    $srcW = imagesx($im);
+    $srcH = imagesy($im);
+
+    if ($srcW <= 0 || $srcH <= 0) {
+        imagedestroy($im);
+        return null;
+    }
+
+    $targetWidth = max(10, min($targetWidth, 200));
+    $scale = $targetWidth / $srcW;
+    $targetHeight = (int)round($srcH * $scale * 0.5);
+    if ($targetHeight < 5) {
+        $targetHeight = 5;
+    }
+
+    $chars = '@%#*+=-:. ';
+    $charLen = strlen($chars) - 1;
+
+    $lines = [];
+
+    for ($y = 0; $y < $targetHeight; $y++) {
+        $row = '';
+        $srcY = (int)($y * $srcH / $targetHeight);
+        for ($x = 0; $x < $targetWidth; $x++) {
+            $srcX = (int)($x * $srcW / $targetWidth);
+            $rgb = imagecolorat($im, $srcX, $srcY);
+            $r = ($rgb >> 16) & 0xFF;
+            $g = ($rgb >> 8) & 0xFF;
+            $b = $rgb & 0xFF;
+
+            $lum = 0.299 * $r + 0.587 * $g + 0.114 * $b;
+            $idx = (int)round(($lum / 255) * $charLen);
+            if ($idx < 0) $idx = 0;
+            if ($idx > $charLen) $idx = $charLen;
+
+            $row .= $chars[$idx];
+        }
+        $lines[] = $row;
+    }
+
+    imagedestroy($im);
+
+    return implode("\n", $lines);
+}
+
+$action = $_GET['action'] ?? null;
+
+switch ($action) {
+    case 'list':
+        $virtualPath = $_GET['path'] ?? '/';
+        $realPath = resolve_path($virtualPath, $contentRoot);
+        if (!$realPath || !is_dir($realPath)) {
+            respond(['error' => 'Directory not found', 'path' => $virtualPath], 404);
+        }
+
+        $items = [];
+        $dir = new DirectoryIterator($realPath);
+        foreach ($dir as $fileinfo) {
+            if ($fileinfo->isDot()) continue;
+
+            $type = $fileinfo->isDir() ? 'dir' : 'file';
+            $name = $fileinfo->getFilename();
+            $ext  = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+
+            if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp'], true)) {
+                $type = 'image';
+            }
+
+            $items[] = [
+                'name'     => $name,
+                'type'     => $type,
+                'size'     => $fileinfo->getSize(),
+                'created'  => $fileinfo->getCTime(),
+                'modified' => $fileinfo->getMTime(),
+            ];
+        }
+
+        respond([
+            'path'  => $virtualPath,
+            'items' => $items,
+        ]);
+        break;
+
+    case 'file':
+        $virtualPath = $_GET['path'] ?? '';
+        $realPath = resolve_path($virtualPath, $contentRoot);
+        if (!$realPath || !is_file($realPath)) {
+            respond(['error' => 'File not found', 'path' => $virtualPath], 404);
+        }
+
+        $ext = strtolower(pathinfo($realPath, PATHINFO_EXTENSION));
+
+        if ($ext === 'md') {
+            $content = file_get_contents($realPath);
+            respond([
+                'path'     => $virtualPath,
+                'type'     => 'markdown',
+                'created'  => filectime($realPath),
+                'modified' => filemtime($realPath),
+                'content'  => $content,
+            ]);
+        } elseif (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp'], true)) {
+            respond([
+                'path'     => $virtualPath,
+                'type'     => 'image',
+                'created'  => filectime($realPath),
+                'modified' => filemtime($realPath),
+            ]);
+        } else {
+            $content = file_get_contents($realPath);
+            respond([
+                'path'     => $virtualPath,
+                'type'     => 'text',
+                'created'  => filectime($realPath),
+                'modified' => filemtime($realPath),
+                'content'  => $content,
+            ]);
+        }
+        break;
+
+    case 'image-ansi':
+        $virtualPath = $_GET['path'] ?? '';
+        $width       = isset($_GET['width']) ? (int)$_GET['width'] : 80;
+
+        $realPath = resolve_path($virtualPath, $contentRoot);
+        if (!$realPath || !is_file($realPath)) {
+            respond(['error' => 'File not found', 'path' => $virtualPath], 404);
+        }
+
+        $ext = strtolower(pathinfo($realPath, PATHINFO_EXTENSION));
+        if (!in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp'], true)) {
+            respond(['error' => 'Unsupported image type', 'path' => $virtualPath], 400);
+        }
+
+        $ascii = image_to_ascii($realPath, $width);
+        if ($ascii === null) {
+            respond(['error' => 'Failed to convert image'], 500);
+        }
+
+        respond([
+            'path'    => $virtualPath,
+            'type'    => 'image-ascii',
+            'content' => $ascii,
+        ]);
+        break;
+
+    default:
+        respond(['error' => 'Unknown or missing action'], 400);
+}
