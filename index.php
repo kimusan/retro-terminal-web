@@ -7,6 +7,7 @@ $config = require __DIR__ . '/config.php';
 
 $shellUser = $config['shell_user'] ?? 'guest';
 $shellHost = $config['shell_host'] ?? null;
+$defaultTheme = $config['default_theme'] ?? 'classic';
 
 if (!$shellHost) {
     $shellHost = $_SERVER['HTTP_HOST'] ?? 'localhost';
@@ -30,7 +31,8 @@ if (!$shellHost) {
 
 <div id="terminal"
      data-shell-user="<?= htmlspecialchars($shellUser, ENT_QUOTES) ?>"
-     data-shell-host="<?= htmlspecialchars($shellHost, ENT_QUOTES) ?>">
+     data-shell-host="<?= htmlspecialchars($shellHost, ENT_QUOTES) ?>"
+     data-default-theme="<?= htmlspecialchars($defaultTheme, ENT_QUOTES) ?>">
 </div>
 
 <script src="assets/js/terminal.js"></script>

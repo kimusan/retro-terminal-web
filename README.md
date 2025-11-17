@@ -32,6 +32,7 @@ Perfect for:
 * Tab completion for commands & filenames
 * Markdown renderer with headings/lists/bold/italic, clickable links, and inline ANSI art
 * Responsive layout recalculates pager height + ASCII art width on resize
+* Toggleable CRT bloom/scanline filter via the `crt` command
 
 ### **📁 Filesystem-Driven Content**
 
@@ -56,6 +57,8 @@ Everything the user sees comes from the `content/` directory.
 | `uname [-a]`            | Display simulated system information            |
 | `whoami`                | Show the current user name                      |
 | `date`                  | Display the current date and time               |
+| `banner`                | Display a retro system info summary             |
+| `crt [mode]`            | Toggle the CRT filter (on/off/toggle/status)    |
 | `clear`                 | Clear screen                                    |
 
 ### **🖼 Image → ASCII Rendering**
@@ -130,12 +133,15 @@ return [
   'content_root' => __DIR__ . '/content',
   'shell_user'   => 'guest',
   'shell_host'   => null, // defaults to domain
+  'default_theme' => 'classic', // or 'crt'
   'options' => [
       'enable_ansi_images' => true,
       'max_output_lines'   => 200
   ],
 ];
 ```
+
+Set `'default_theme' => 'crt'` to enable the CRT filter by default (visitors can still toggle it via the `crt` command).
 
 ### Changing terminal identity:
 

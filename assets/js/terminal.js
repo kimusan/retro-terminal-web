@@ -5,6 +5,7 @@ class RetroTerminal {
         this.rootEl = rootEl;
         this.user = rootEl.dataset.shellUser || 'guest';
         this.host = rootEl.dataset.shellHost || window.location.hostname || 'localhost';
+        this.defaultTheme = (rootEl.dataset.defaultTheme || 'classic').toLowerCase();
 
         this.currentPath = '/';
         this.history = [];
@@ -20,6 +21,9 @@ class RetroTerminal {
         this.manPages = this.getDefaultManPages();
         this.savedScrollTop = 0;
         this.savedOverflow = null;
+        this.crtEnabled = false;
+        this.crtPreferenceKey = 'retro-terminal-crt';
+        this.bootTime = Date.now();
 
         this.init();
     }
@@ -33,6 +37,7 @@ class RetroTerminal {
         document.addEventListener('keydown', (e) => this.handleKeydown(e));
         window.addEventListener('resize', () => this.handleResize());
         this.updateTerminalMetrics();
+        this.restorePreferences();
     }
 
     async runFakeSSHSequence() {
@@ -178,7 +183,7 @@ class RetroTerminal {
 
         const parts = trimmed.split(/\s+/);
         const first = parts[0];
-        const commands = ['help', 'ls', 'cd', 'pwd', 'cat', 'less', 'clear', 'man', 'uname', 'whoami', 'date'];
+        const commands = ['help', 'ls', 'cd', 'pwd', 'cat', 'less', 'clear', 'man', 'uname', 'whoami', 'date', 'crt', 'banner'];
 
         if (parts.length === 1) {
             const matches = commands.filter(c => c.startsWith(first));
@@ -255,6 +260,12 @@ class RetroTerminal {
                 break;
             case 'date':
                 result = this.cmdDate(args);
+                break;
+            case 'banner':
+                result = this.cmdBanner(args);
+                break;
+            case 'crt':
+                result = this.cmdCrt(args);
                 break;
             default:
                 this.printLine(`${cmd}: command not found`, 'terminal-error');
@@ -400,6 +411,27 @@ class RetroTerminal {
         ].join('\n');
     }
 
+    getBannerHelpText() {
+        return [
+            'Usage: banner',
+            '',
+            'Display a retro system info summary (neofetch style).'
+        ].join('\n');
+    }
+
+    getCrtHelpText() {
+        return [
+            'Usage: crt [on|off|toggle|status]',
+            '',
+            'Toggle the CRT visual filter for the terminal.',
+            '',
+            'Examples:',
+            '  crt on',
+            '  crt off',
+            '  crt toggle'
+        ].join('\n');
+    }
+
     getHelpOverview() {
         return [
             'Available commands:',
@@ -413,6 +445,8 @@ class RetroTerminal {
             '  uname [-a]    Display system information',
             '  whoami        Print current user',
             '  date          Display current date/time',
+            '  banner        Show retro system info banner',
+            '  crt [mode]    Toggle CRT visual filter',
             '  clear         Clear the screen',
             '',
             'Most commands support -h or --help for more info.'
@@ -721,6 +755,58 @@ class RetroTerminal {
             return;
         }
         this.printLine(new Date().toString());
+    }
+
+    cmdBanner(args) {
+        if (args[0] === '-h' || args[0] === '--help') {
+            this.printLine(this.getBannerHelpText());
+            return;
+        }
+
+        const art = [
+            '      ____            _                 ',
+            '     |  _ \\ ___  __ _| |_ ___  ___ ___  ',
+            '     | |_) / _ \\/ _` | __/ _ \\/ __/ __| ',
+            '     |  _ <  __/ (_| | ||  __/\\__ \\__ \\ ',
+            '     |_| \\_\\___|\\__,_|\\__\\___||___/___/ '
+        ].join('\n');
+
+        const info = [
+            ` user   : ${this.user}`,
+            ` host   : ${this.host}`,
+            ` kernel : Linux 5.15.0-retro`,
+            ` uptime : ${this.getFakeUptime()}`,
+            ` ascii  : ANSI color renderer`,
+            ` theme  : ${this.crtEnabled ? 'CRT glow' : 'Classic'}`
+        ].join('\n');
+
+        this.printLine(`${art}\n\n${info}`);
+    }
+
+    cmdCrt(args) {
+        const mode = (args[0] || '').toLowerCase();
+        if (mode === '-h' || mode === '--help') {
+            this.printLine(this.getCrtHelpText());
+            return;
+        }
+
+        if (!mode || mode === 'status') {
+            this.printLine(`CRT mode is currently ${this.crtEnabled ? 'enabled' : 'disabled'}.`);
+            return;
+        }
+
+        if (mode === 'on') {
+            this.applyCrtMode(true);
+            this.printLine('CRT mode enabled.');
+        } else if (mode === 'off') {
+            this.applyCrtMode(false);
+            this.printLine('CRT mode disabled.');
+        } else if (mode === 'toggle') {
+            this.applyCrtMode(!this.crtEnabled);
+            this.printLine(`CRT mode ${this.crtEnabled ? 'enabled' : 'disabled'}.`);
+        } else {
+            this.printLine('crt: unsupported mode (use on/off/toggle/status)', 'terminal-error');
+        }
     }
 
     printLine(text = '', className = 'terminal-line') {
@@ -1142,6 +1228,45 @@ class RetroTerminal {
         }
     }
 
+    restorePreferences() {
+        let saved = null;
+        try {
+            if (window.localStorage) {
+                const value = localStorage.getItem(this.crtPreferenceKey);
+                if (value === '1' || value === '0') {
+                    saved = value === '1';
+                }
+            }
+        } catch (e) {
+            saved = null;
+        }
+        if (saved === null) {
+            saved = this.defaultTheme === 'crt';
+        }
+        this.applyCrtMode(saved, true);
+    }
+
+    applyCrtMode(enabled, skipSave = false) {
+        this.crtEnabled = !!enabled;
+        if (document.body) {
+            document.body.classList.toggle('theme-crt', this.crtEnabled);
+        }
+        if (!skipSave) {
+            try {
+                localStorage.setItem(this.crtPreferenceKey, this.crtEnabled ? '1' : '0');
+            } catch (e) {
+                // ignore
+            }
+        }
+    }
+
+    getFakeUptime() {
+        const diff = Date.now() - this.bootTime;
+        const hours = Math.floor(diff / 3600000);
+        const minutes = Math.floor((diff % 3600000) / 60000);
+        return `${Math.max(hours, 0)}h ${Math.max(minutes, 0)}m`;
+    }
+
     refreshManPages() {
         this.manPages = this.getDefaultManPages();
     }
@@ -1158,7 +1283,9 @@ class RetroTerminal {
             man: this.wrapManPage('man', 'display manual pages', this.getManHelpText()),
             uname: this.wrapManPage('uname', 'print system information', this.getUnameHelpText()),
             whoami: this.wrapManPage('whoami', 'print current user name', this.getWhoamiHelpText()),
-            date: this.wrapManPage('date', 'display current date and time', this.getDateHelpText())
+            date: this.wrapManPage('date', 'display current date and time', this.getDateHelpText()),
+            banner: this.wrapManPage('banner', 'display retro system info', this.getBannerHelpText()),
+            crt: this.wrapManPage('crt', 'toggle CRT visual filter', this.getCrtHelpText())
         };
     }
 

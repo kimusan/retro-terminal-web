@@ -15,6 +15,9 @@ return [
     // If null, will fall back to the HTTP hostname (domain).
     'shell_host'   => null,
 
+    // Default visual theme: 'classic' or 'crt'.
+    'default_theme' => 'classic',
+
     // Misc options.
     'options' => [
         // Limit for large outputs (not strictly enforced everywhere yet).

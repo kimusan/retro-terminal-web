@@ -158,10 +158,10 @@ Here are my recommendations for what to tackle next:
 
 ### 🔥 Priority
 
-1. **Implement full paging for LESS**
-2. **Add markdown formatting (bold, list indentation, link styling)**
-3. **Add CRT-style shader/filter option**
-4. **Add optional command “banner” or “neofetch” style system info**
+1. **Smooth typewriter effect** for the SSH login banner
+2. **Theme variations** beyond CRT (amber, phosphor, dark)
+3. **Sound/feedback cues** for keystrokes or boot noises
+4. **Screen burn-in / idle effects** for longer sessions
 
 ### Optional UI upgrades
 
