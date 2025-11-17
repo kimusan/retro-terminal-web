@@ -207,33 +207,40 @@ class RetroTerminal {
 
         const [cmd, ...args] = command.split(/\s+/);
 
+        let result = null;
+
         switch (cmd) {
             case 'help':
-                this.cmdHelp();
+                result = this.cmdHelp();
                 break;
             case 'clear':
-                this.cmdClear();
+                result = this.cmdClear();
                 break;
             case 'pwd':
-                this.cmdPwd();
+                result = this.cmdPwd();
                 break;
             case 'ls':
-                this.cmdLs(args);
+                result = this.cmdLs(args);
                 break;
             case 'cd':
-                this.cmdCd(args);
+                result = this.cmdCd(args);
                 break;
             case 'cat':
-                this.cmdCat(args);
+                result = this.cmdCat(args);
                 break;
             case 'less':
-                this.cmdLess(args);
+                result = this.cmdLess(args);
                 break;
             default:
                 this.printLine(`${cmd}: command not found`, 'terminal-error');
+                break;
         }
 
-        this.newPrompt();
+        if (result && typeof result.then === 'function') {
+            result.finally(() => this.newPrompt());
+        } else {
+            this.newPrompt();
+        }
     }
 
     resolveVirtualPath(basePath, arg) {
@@ -385,7 +392,7 @@ class RetroTerminal {
 
         const url = `${this.apiBase}?action=list&path=${encodeURIComponent(virtualPath)}`;
 
-        fetch(url)
+        return fetch(url)
             .then(res => res.json())
             .then(data => {
                 if (data.error) {
@@ -481,7 +488,7 @@ class RetroTerminal {
         const newPath = this.resolveVirtualPath(this.currentPath, target);
         const url = `${this.apiBase}?action=list&path=${encodeURIComponent(newPath)}`;
 
-        fetch(url)
+        return fetch(url)
             .then(res => res.json())
             .then(data => {
                 if (data.error) {
@@ -511,7 +518,7 @@ class RetroTerminal {
         const virtualPath = this.resolveVirtualPath(this.currentPath, target);
         const url = `${this.apiBase}?action=file&path=${encodeURIComponent(virtualPath)}`;
 
-        fetch(url)
+        return fetch(url)
             .then(res => res.json())
             .then(data => {
                 if (data.error) {
@@ -524,7 +531,7 @@ class RetroTerminal {
                 } else if (data.type === 'image') {
                     const width = 80;
                     const imgUrl = `${this.apiBase}?action=image-ansi&path=${encodeURIComponent(virtualPath)}&width=${width}`;
-                    fetch(imgUrl)
+                    return fetch(imgUrl)
                         .then(r => r.json())
                         .then(imgData => {
                             if (imgData.error) {
@@ -562,7 +569,7 @@ class RetroTerminal {
         const virtualPath = this.resolveVirtualPath(this.currentPath, target);
         const url = `${this.apiBase}?action=file&path=${encodeURIComponent(virtualPath)}`;
 
-        fetch(url)
+        return fetch(url)
             .then(res => res.json())
             .then(data => {
                 if (data.error) {
