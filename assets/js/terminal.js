@@ -11,6 +11,7 @@ class RetroTerminal {
         this.historyIndex = -1;
         this.currentInputEl = null;
         this.cursorEl = null;
+        this.lessState = null;
 
         this.apiBase = 'api.php';
         this.dirCache = {};
@@ -25,6 +26,7 @@ class RetroTerminal {
             .then(() => this.newPrompt());
 
         document.addEventListener('keydown', (e) => this.handleKeydown(e));
+        window.addEventListener('resize', () => this.handleResize());
     }
 
     async runFakeSSHSequence() {
@@ -115,6 +117,11 @@ class RetroTerminal {
     }
 
     handleKeydown(e) {
+        if (this.lessState) {
+            this.handleLessKey(e);
+            return;
+        }
+
         if (!this.currentInputEl) return;
 
         const isAtPrompt = document.activeElement === this.currentInputEl ||
@@ -569,21 +576,24 @@ class RetroTerminal {
         const virtualPath = this.resolveVirtualPath(this.currentPath, target);
         const url = `${this.apiBase}?action=file&path=${encodeURIComponent(virtualPath)}`;
 
-        return fetch(url)
-            .then(res => res.json())
-            .then(data => {
-                if (data.error) {
-                    this.printLine(`less: ${data.error}: ${target}`, 'terminal-error');
-                    return;
-                }
+        return new Promise((resolve) => {
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) {
+                        this.printLine(`less: ${data.error}: ${target}`, 'terminal-error');
+                        resolve();
+                        return;
+                    }
 
-                this.printLine(data.content || '');
-                this.printLine('[end of file – paging UI coming soon]');
-            })
-            .catch(err => {
-                console.error(err);
-                this.printLine('less: error reading file', 'terminal-error');
-            });
+                    this.openLessViewer(data.content || '', virtualPath, resolve);
+                })
+                .catch(err => {
+                    console.error(err);
+                    this.printLine('less: error reading file', 'terminal-error');
+                    resolve();
+                });
+        });
     }
 
     printLine(text = '', className = 'terminal-line') {
@@ -600,6 +610,121 @@ class RetroTerminal {
 
     sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    openLessViewer(text, virtualPath, onClose) {
+        this.removeActiveCursor();
+        const overlay = document.createElement('div');
+        overlay.className = 'less-overlay';
+
+        const header = document.createElement('div');
+        header.className = 'less-header';
+        header.textContent = `LESS - ${virtualPath}`;
+        overlay.appendChild(header);
+
+        const content = document.createElement('pre');
+        content.className = 'less-content';
+        overlay.appendChild(content);
+
+        const status = document.createElement('div');
+        status.className = 'less-status';
+        overlay.appendChild(status);
+
+        this.rootEl.appendChild(overlay);
+
+        const lines = text.split(/\r?\n/);
+        this.lessState = {
+            lines,
+            offset: 0,
+            linesPerPage: 20,
+            overlay,
+            contentEl: content,
+            statusEl: status,
+            onClose
+        };
+
+        this.updateLessViewport();
+    }
+
+    closeLessViewer() {
+        if (!this.lessState) return;
+        if (this.lessState.overlay.parentElement) {
+            this.lessState.overlay.parentElement.removeChild(this.lessState.overlay);
+        }
+        const onClose = this.lessState.onClose;
+        this.lessState = null;
+        if (typeof onClose === 'function') {
+            onClose();
+        }
+    }
+
+    calculateLessLines() {
+        if (!this.lessState) {
+            return 20;
+        }
+        const overlay = this.lessState.overlay;
+        const statusEl = this.lessState.statusEl;
+        const overlayHeight = overlay.clientHeight || this.rootEl.clientHeight || 400;
+        const statusHeight = statusEl.clientHeight || 0;
+        const styles = window.getComputedStyle(this.rootEl);
+        const lineHeight = parseFloat(styles.lineHeight) || 18;
+        const available = overlayHeight - statusHeight - 16;
+        return Math.max(5, Math.floor(available / lineHeight));
+    }
+
+    updateLessViewport() {
+        if (!this.lessState) return;
+        const state = this.lessState;
+        state.linesPerPage = this.calculateLessLines();
+        if (state.offset > Math.max(0, state.lines.length - state.linesPerPage)) {
+            state.offset = Math.max(0, state.lines.length - state.linesPerPage);
+        }
+        const end = Math.min(state.offset + state.linesPerPage, state.lines.length);
+        const segment = state.lines.slice(state.offset, end);
+        state.contentEl.textContent = segment.join('\n');
+
+        const progress = `${end}/${state.lines.length || 0} lines`;
+        state.statusEl.textContent = end < state.lines.length
+            ? `--More-- (${progress})  q to quit | space to page`
+            : `(END) (${progress})  q to quit`;
+    }
+
+    handleLessKey(e) {
+        if (!this.lessState) return;
+        const key = e.key;
+        const lower = key.length === 1 ? key.toLowerCase() : key;
+
+        if (lower === 'q' || key === 'Escape') {
+            e.preventDefault();
+            this.closeLessViewer();
+            return;
+        }
+
+        let delta = 0;
+        const state = this.lessState;
+
+        if (key === 'ArrowDown' || lower === 'j') {
+            delta = 1;
+        } else if (key === 'ArrowUp' || lower === 'k') {
+            delta = -1;
+        } else if (key === 'PageDown' || key === ' ') {
+            delta = state.linesPerPage;
+        } else if (key === 'PageUp') {
+            delta = -state.linesPerPage;
+        }
+
+        if (delta !== 0) {
+            e.preventDefault();
+            const maxOffset = Math.max(0, state.lines.length - state.linesPerPage);
+            state.offset = Math.min(maxOffset, Math.max(0, state.offset + delta));
+            this.updateLessViewport();
+        }
+    }
+
+    handleResize() {
+        if (this.lessState) {
+            this.updateLessViewport();
+        }
     }
 }
 

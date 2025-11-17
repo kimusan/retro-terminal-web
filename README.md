@@ -49,7 +49,7 @@ Everything the user sees comes from the `content/` directory.
 | `cd`                    | Change directory                                |
 | `pwd`                   | Print working directory                         |
 | `cat <file>`            | Display text/markdown or ASCII-converted images |
-| `less <file>`           | Basic viewer (paging WIP)                       |
+| `less <file>`           | Full-screen pager with keyboard navigation      |
 | `clear`                 | Clear screen                                    |
 
 ### **🖼 Image → ASCII Rendering**
@@ -186,7 +186,6 @@ See **[ROADMAP.md](ROADMAP.md)** for long-term plans.
 
 Upcoming features include:
 
-* Full paging UI for `less`
 * Improved markdown rendering
 * CRT bloom / glow modes
 * Custom themes

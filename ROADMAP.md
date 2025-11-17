@@ -73,7 +73,7 @@ A structured implementation roadmap for the retro-themed terminal website, actin
 
 ### Planned
 
-* **Improve LESS** to act like real less:
+* **Improve LESS** to act like real less: ✅ *Done*
 
   * paging UI
   * navigation (space, j/k, q)
@@ -168,4 +168,3 @@ Here are my recommendations for what to tackle next:
 * Sound effects (keystrokes, boot noise)
 * Screen burn-in effect on long idle
 * Cursor style options
-
