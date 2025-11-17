@@ -30,6 +30,7 @@ Perfect for:
 * Blinking cursor, auto-scroll, editable prompt
 * Command history (`↑` / `↓`)
 * Tab completion for commands & filenames
+* Markdown renderer with headings/lists/bold/italic, clickable links, and inline ANSI art
 * Responsive layout recalculates pager height + ASCII art width on resize
 
 ### **📁 Filesystem-Driven Content**
@@ -55,7 +56,7 @@ Everything the user sees comes from the `content/` directory.
 
 ### **🖼 Image → ASCII Rendering**
 
-Image files (`png`, `jpg`, `gif`, `webp`) automatically render in the terminal as ASCII art using PHP GD.
+Image files (`png`, `jpg`, `gif`, `webp`) automatically render in the terminal as ANSI-colored ASCII art using PHP GD.
 
 ---
 

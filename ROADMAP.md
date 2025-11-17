@@ -102,7 +102,7 @@ A structured implementation roadmap for the retro-themed terminal website, actin
   * `ls`
   * `cd`
   * `cat`
-* Markdown renderer may be extended to:
+* Markdown renderer now supports:
 
   * headings in bold green
   * *italic*, lists, links

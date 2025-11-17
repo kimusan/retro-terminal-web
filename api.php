@@ -65,7 +65,7 @@ function load_image_resource(string $path)
     }
 }
 
-function image_to_ascii(string $path, int $targetWidth = 80): ?string
+function image_to_ascii(string $path, int $targetWidth = 80, bool $withColor = false): ?string
 {
     $im = load_image_resource($path);
     if (!$im) {
@@ -91,6 +91,7 @@ function image_to_ascii(string $path, int $targetWidth = 80): ?string
     $charLen = strlen($chars) - 1;
 
     $lines = [];
+    $resetSeq = "\033[0m";
 
     for ($y = 0; $y < $targetHeight; $y++) {
         $row = '';
@@ -107,7 +108,15 @@ function image_to_ascii(string $path, int $targetWidth = 80): ?string
             if ($idx < 0) $idx = 0;
             if ($idx > $charLen) $idx = $charLen;
 
-            $row .= $chars[$idx];
+            $char = $chars[$idx];
+            if ($withColor) {
+                $row .= sprintf("\033[38;2;%d;%d;%dm%s", $r, $g, $b, $char);
+            } else {
+                $row .= $char;
+            }
+        }
+        if ($withColor) {
+            $row .= $resetSeq;
         }
         $lines[] = $row;
     }
@@ -199,6 +208,7 @@ switch ($action) {
     case 'image-ansi':
         $virtualPath = $_GET['path'] ?? '';
         $width       = isset($_GET['width']) ? (int)$_GET['width'] : 80;
+        $withColor   = isset($_GET['color']) && $_GET['color'] !== '0';
 
         $realPath = resolve_path($virtualPath, $contentRoot);
         if (!$realPath || !is_file($realPath)) {
@@ -210,7 +220,7 @@ switch ($action) {
             respond(['error' => 'Unsupported image type', 'path' => $virtualPath], 400);
         }
 
-        $ascii = image_to_ascii($realPath, $width);
+        $ascii = image_to_ascii($realPath, $width, $withColor);
         if ($ascii === null) {
             respond(['error' => 'Failed to convert image'], 500);
         }

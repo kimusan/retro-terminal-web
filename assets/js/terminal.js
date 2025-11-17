@@ -536,19 +536,23 @@ class RetroTerminal {
                     return;
                 }
 
-                if (data.type === 'markdown' || data.type === 'text') {
+                if (data.type === 'markdown') {
+                    return this.renderMarkdown(data.content || '', virtualPath);
+                }
+
+                if (data.type === 'text') {
                     this.printLine(data.content || '');
                 } else if (data.type === 'image') {
                     const width = this.getAsciiWidth();
-                    const imgUrl = `${this.apiBase}?action=image-ansi&path=${encodeURIComponent(virtualPath)}&width=${width}`;
+                    const imgUrl = `${this.apiBase}?action=image-ansi&path=${encodeURIComponent(virtualPath)}&width=${width}&color=1`;
                     return fetch(imgUrl)
                         .then(r => r.json())
                         .then(imgData => {
-                            if (imgData.error) {
-                                this.printLine(`cat: ${imgData.error}`, 'terminal-error');
+                            if (imgData.error || !imgData.content) {
+                                this.printLine(`cat: ${imgData.error || 'failed to render image'}`, 'terminal-error');
                                 return;
                             }
-                            this.printLine(imgData.content || '');
+                            this.printAnsiArt(imgData.content);
                         })
                         .catch(err => {
                             console.error(err);
@@ -613,6 +617,283 @@ class RetroTerminal {
 
     sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    printAnsiArt(ansiText = '') {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'terminal-line terminal-ansi-wrapper';
+        wrapper.appendChild(this.renderAnsiArt(ansiText));
+        this.rootEl.appendChild(wrapper);
+        this.scrollToBottom();
+    }
+
+    renderAnsiArt(ansiText = '') {
+        const pre = document.createElement('pre');
+        pre.className = 'terminal-ansi';
+        let state = { color: null };
+        let buffer = '';
+        const flush = () => {
+            if (!buffer) return;
+            const span = document.createElement('span');
+            if (state.color) {
+                span.style.color = state.color;
+            }
+            span.textContent = buffer;
+            pre.appendChild(span);
+            buffer = '';
+        };
+
+        for (let i = 0; i < ansiText.length; i++) {
+            const ch = ansiText[i];
+            if (ch === '\u001b' && ansiText[i + 1] === '[') {
+                flush();
+                i += 2;
+                let seq = '';
+                while (i < ansiText.length && ansiText[i] !== 'm') {
+                    seq += ansiText[i];
+                    i++;
+                }
+                const parts = seq.split(';').map(part => Number(part));
+                this.applyAnsiCodes(parts, state);
+                continue;
+            }
+            buffer += ch;
+        }
+        flush();
+        return pre;
+    }
+
+    applyAnsiCodes(codes, state) {
+        if (!Array.isArray(codes) || !state) return;
+        for (let i = 0; i < codes.length; i++) {
+            const code = codes[i];
+            if (code === 0 || Number.isNaN(code)) {
+                state.color = null;
+            } else if (code === 38 && codes[i + 1] === 2 && codes.length >= i + 5) {
+                const r = Math.max(0, Math.min(255, codes[i + 2] || 0));
+                const g = Math.max(0, Math.min(255, codes[i + 3] || 0));
+                const b = Math.max(0, Math.min(255, codes[i + 4] || 0));
+                state.color = `rgb(${r}, ${g}, ${b})`;
+                i += 4;
+            }
+        }
+    }
+
+    renderMarkdown(text, virtualPath) {
+        const container = document.createElement('div');
+        container.className = 'terminal-line terminal-markdown';
+        this.rootEl.appendChild(container);
+
+        const lines = (text || '').split(/\r?\n/);
+        const tasks = [];
+        let listEl = null;
+        let inCodeBlock = false;
+        let codeLines = [];
+
+        const flushList = () => {
+            listEl = null;
+        };
+
+        const flushCode = () => {
+            if (!codeLines.length) return;
+            const pre = document.createElement('pre');
+            pre.className = 'md-code';
+            pre.textContent = codeLines.join('\n');
+            container.appendChild(pre);
+            codeLines = [];
+        };
+
+        const appendParagraph = (line) => {
+            const p = document.createElement('div');
+            p.className = 'md-paragraph';
+            p.innerHTML = this.formatInlineMarkdown(line);
+            container.appendChild(p);
+        };
+
+        lines.forEach((rawLine) => {
+            const trimmed = rawLine.trim();
+
+            if (trimmed.startsWith('```')) {
+                if (inCodeBlock) {
+                    flushCode();
+                    inCodeBlock = false;
+                } else {
+                    flushList();
+                    inCodeBlock = true;
+                    codeLines = [];
+                }
+                return;
+            }
+
+            if (inCodeBlock) {
+                codeLines.push(rawLine);
+                return;
+            }
+
+            if (!trimmed) {
+                flushList();
+                container.appendChild(document.createElement('br'));
+                return;
+            }
+
+            const imageMatch = trimmed.match(/^!\[([^\]]*)\]\(([^)]+)\)/);
+            if (imageMatch) {
+                flushList();
+                const imageWrapper = document.createElement('div');
+                imageWrapper.className = 'md-image';
+                imageWrapper.textContent = `Loading ${imageMatch[1] || 'image'}...`;
+                container.appendChild(imageWrapper);
+                const assetPath = this.resolveMarkdownAsset(virtualPath, imageMatch[2]);
+                if (assetPath) {
+                    tasks.push(this.renderMarkdownImage(imageWrapper, assetPath, imageMatch[1] || 'image'));
+                } else {
+                    imageWrapper.textContent = 'Image reference not supported.';
+                }
+                return;
+            }
+
+            const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
+            if (headingMatch) {
+                flushList();
+                const level = headingMatch[1].length;
+                const heading = document.createElement('div');
+                heading.className = `md-heading md-h${level}`;
+                heading.innerHTML = this.formatInlineMarkdown(headingMatch[2]);
+                container.appendChild(heading);
+                return;
+            }
+
+            const quoteMatch = trimmed.match(/^>\s?(.*)$/);
+            if (quoteMatch) {
+                flushList();
+                const block = document.createElement('div');
+                block.className = 'md-blockquote';
+                block.innerHTML = this.formatInlineMarkdown(quoteMatch[1]);
+                container.appendChild(block);
+                return;
+            }
+
+            const listMatch = rawLine.match(/^\s*[-*+]\s+(.*)$/);
+            if (listMatch) {
+                if (!listEl) {
+                    listEl = document.createElement('ul');
+                    listEl.className = 'md-list';
+                    container.appendChild(listEl);
+                }
+                const li = document.createElement('li');
+                li.innerHTML = this.formatInlineMarkdown(listMatch[1]);
+                listEl.appendChild(li);
+                return;
+            }
+
+            flushList();
+            appendParagraph(trimmed);
+        });
+
+        if (inCodeBlock) {
+            flushCode();
+        }
+
+        this.scrollToBottom();
+
+        return Promise.all(tasks).then(() => {
+            this.scrollToBottom();
+        });
+    }
+
+    formatInlineMarkdown(text) {
+        let html = this.escapeHtml(text || '');
+
+        const codePattern = /`([^`]+)`/g;
+        html = html.replace(codePattern, '<code>$1</code>');
+
+        const boldPatterns = [
+            { regex: /\*\*([^*]+)\*\*/g, replacement: '<strong>$1</strong>' },
+            { regex: /__([^_]+)__/g, replacement: '<strong>$1</strong>' }
+        ];
+        boldPatterns.forEach(({ regex, replacement }) => {
+            html = html.replace(regex, replacement);
+        });
+
+        const italicPattern = /(^|[^*])\*([^*]+)\*/g;
+        html = html.replace(italicPattern, (match, prefix, value) => {
+            return `${prefix}<em>${value}</em>`;
+        });
+        const underscorePattern = /(^|[^_])_([^_]+)_/g;
+        html = html.replace(underscorePattern, (match, prefix, value) => {
+            return `${prefix}<em>${value}</em>`;
+        });
+
+        html = html.replace(/~~([^~]+)~~/g, '<s>$1</s>');
+
+        html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, url) => {
+            const rawUrl = (url || '').trim();
+            const safeUrl = this.escapeAttribute(rawUrl);
+            const safeLabel = this.escapeHtml(label);
+            const external = /^https?:\/\//i.test(rawUrl);
+            const target = external ? '_blank' : '_self';
+            const rel = external ? ' rel="noopener"' : '';
+            return `<a href="${safeUrl}" target="${target}"${rel}>${safeLabel}</a>`;
+        });
+
+        return html;
+    }
+
+    escapeHtml(text) {
+        if (text === null || text === undefined) return '';
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    escapeAttribute(text) {
+        if (text === null || text === undefined) return '';
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;');
+    }
+
+    getDirectoryOfPath(virtualPath) {
+        if (!virtualPath || virtualPath === '/') return '/';
+        const parts = virtualPath.split('/').filter(Boolean);
+        parts.pop();
+        return '/' + parts.join('/');
+    }
+
+    resolveMarkdownAsset(markdownPath, target) {
+        if (!target) return null;
+        if (/^[a-z]+:\/\//i.test(target)) {
+            return null;
+        }
+        if (target.startsWith('/')) {
+            return target;
+        }
+        const dir = this.getDirectoryOfPath(markdownPath);
+        return this.resolveVirtualPath(dir || '/', target);
+    }
+
+    renderMarkdownImage(targetEl, virtualPath, altText = '') {
+        const width = this.getAsciiWidth();
+        const url = `${this.apiBase}?action=image-ansi&path=${encodeURIComponent(virtualPath)}&width=${width}&color=1`;
+        targetEl.textContent = `Loading ${altText || 'image'}...`;
+        return fetch(url)
+            .then(res => res.json())
+            .then(data => {
+                targetEl.innerHTML = '';
+                if (data.error || !data.content) {
+                    targetEl.textContent = data.error || 'Failed to render image.';
+                    return;
+                }
+                const art = this.renderAnsiArt(data.content);
+                targetEl.appendChild(art);
+            })
+            .catch(err => {
+                console.error(err);
+                targetEl.textContent = 'Failed to render image.';
+            })
+            .finally(() => this.scrollToBottom());
     }
 
     openLessViewer(text, virtualPath, onClose) {
