@@ -78,6 +78,7 @@ body {
     flex-direction: column;
     padding: 8px;
     gap: 8px;
+    font-family: inherit;
 }
 
 .less-header {
@@ -89,6 +90,7 @@ body {
     margin: 0;
     overflow: hidden;
     white-space: pre-wrap;
+    font-family: inherit;
 }
 
 .less-status {
