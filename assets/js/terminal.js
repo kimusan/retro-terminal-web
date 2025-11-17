@@ -18,6 +18,8 @@ class RetroTerminal {
         this.apiBase = 'api.php';
         this.dirCache = {};
         this.manPages = this.getDefaultManPages();
+        this.savedScrollTop = 0;
+        this.savedOverflow = null;
 
         this.init();
     }
@@ -1016,6 +1018,11 @@ class RetroTerminal {
 
     openLessViewer(text, virtualPath, onClose) {
         this.removeActiveCursor();
+        this.savedScrollTop = this.rootEl.scrollTop;
+        this.savedOverflow = this.rootEl.style.overflow;
+        this.rootEl.style.overflow = 'hidden';
+        this.rootEl.scrollTop = 0;
+
         const overlay = document.createElement('div');
         overlay.className = 'less-overlay';
 
@@ -1053,6 +1060,11 @@ class RetroTerminal {
         if (this.lessState.overlay.parentElement) {
             this.lessState.overlay.parentElement.removeChild(this.lessState.overlay);
         }
+        this.rootEl.style.overflow = this.savedOverflow || '';
+        this.rootEl.scrollTop = this.savedScrollTop || this.rootEl.scrollHeight;
+        this.savedOverflow = null;
+        this.savedScrollTop = 0;
+
         const onClose = this.lessState.onClose;
         this.lessState = null;
         if (typeof onClose === 'function') {
