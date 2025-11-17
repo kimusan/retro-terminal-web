@@ -52,6 +52,10 @@ Everything the user sees comes from the `content/` directory.
 | `pwd`                   | Print working directory                         |
 | `cat <file>`            | Display text/markdown or ASCII-converted images |
 | `less <file>`           | Full-screen pager with keyboard navigation      |
+| `man <cmd>`             | Show the faux manual entry for a command        |
+| `uname [-a]`            | Display simulated system information            |
+| `whoami`                | Show the current user name                      |
+| `date`                  | Display the current date and time               |
 | `clear`                 | Clear screen                                    |
 
 ### **🖼 Image → ASCII Rendering**

@@ -17,6 +17,7 @@ class RetroTerminal {
 
         this.apiBase = 'api.php';
         this.dirCache = {};
+        this.manPages = this.getDefaultManPages();
 
         this.init();
     }
@@ -175,7 +176,7 @@ class RetroTerminal {
 
         const parts = trimmed.split(/\s+/);
         const first = parts[0];
-        const commands = ['help', 'ls', 'cd', 'pwd', 'cat', 'less', 'clear'];
+        const commands = ['help', 'ls', 'cd', 'pwd', 'cat', 'less', 'clear', 'man', 'uname', 'whoami', 'date'];
 
         if (parts.length === 1) {
             const matches = commands.filter(c => c.startsWith(first));
@@ -240,6 +241,18 @@ class RetroTerminal {
                 break;
             case 'less':
                 result = this.cmdLess(args);
+                break;
+            case 'man':
+                result = this.cmdMan(args);
+                break;
+            case 'uname':
+                result = this.cmdUname(args);
+                break;
+            case 'whoami':
+                result = this.cmdWhoami(args);
+                break;
+            case 'date':
+                result = this.cmdDate(args);
                 break;
             default:
                 this.printLine(`${cmd}: command not found`, 'terminal-error');
@@ -346,20 +359,66 @@ class RetroTerminal {
         ].join('\n');
     }
 
-    cmdHelp() {
-        const text = [
+    getManHelpText() {
+        return [
+            'Usage: man [COMMAND]',
+            '',
+            'Format and display the manual page for COMMAND.',
+            '',
+            'Examples:',
+            '  man ls',
+            '  man cat'
+        ].join('\n');
+    }
+
+    getUnameHelpText() {
+        return [
+            'Usage: uname [-a]',
+            '',
+            'Print system information.',
+            '',
+            'Options:',
+            '  -a   print all available information'
+        ].join('\n');
+    }
+
+    getWhoamiHelpText() {
+        return [
+            'Usage: whoami',
+            '',
+            'Print the current effective user.'
+        ].join('\n');
+    }
+
+    getDateHelpText() {
+        return [
+            'Usage: date',
+            '',
+            'Display the current date and time.'
+        ].join('\n');
+    }
+
+    getHelpOverview() {
+        return [
             'Available commands:',
             '  help          Show this help message',
             '  ls [-l] [dir] List directory contents',
             '  cd [dir]      Change directory',
             '  pwd           Print current directory',
             '  cat <file>    Show file contents',
-            '  less <file>   View file with paging (COMING SOON)',
+            '  less <file>   View file with paging',
+            '  man <cmd>     Show manual entry for command',
+            '  uname [-a]    Display system information',
+            '  whoami        Print current user',
+            '  date          Display current date/time',
             '  clear         Clear the screen',
             '',
             'Most commands support -h or --help for more info.'
         ].join('\n');
-        this.printLine(text);
+    }
+
+    cmdHelp() {
+        this.printLine(this.getHelpOverview());
     }
 
     cmdClear() {
@@ -600,7 +659,66 @@ class RetroTerminal {
                     this.printLine('less: error reading file', 'terminal-error');
                     resolve();
                 });
-        });
+            });
+    }
+
+    cmdMan(args) {
+        if (args[0] === '-h' || args[0] === '--help') {
+            this.printLine(this.getManHelpText());
+            return;
+        }
+
+        if (!args.length) {
+            this.printLine('What manual page do you want?');
+            return;
+        }
+
+        const topic = args[0].toLowerCase();
+        this.refreshManPages();
+        const entry = this.manPages[topic];
+
+        if (!entry) {
+            this.printLine(`No manual entry for ${topic}`, 'terminal-error');
+            return;
+        }
+
+        this.printLine(entry);
+    }
+
+    cmdUname(args) {
+        if (args[0] === '-h' || args[0] === '--help') {
+            this.printLine(this.getUnameHelpText());
+            return;
+        }
+
+        const kernel = 'Linux';
+        const nodename = this.host || 'retro-shell';
+        const release = '5.15.0-retro';
+        const version = '#1 SMP PREEMPT Mon Jan 1 00:00:00 UTC 1980';
+        const machine = 'x86_64';
+        const os = 'GNU/Linux';
+
+        if (args.includes('-a')) {
+            this.printLine(`${kernel} ${nodename} ${release} ${version} ${machine} ${os}`);
+        } else {
+            this.printLine(kernel);
+        }
+    }
+
+    cmdWhoami(args) {
+        if (args[0] === '-h' || args[0] === '--help') {
+            this.printLine(this.getWhoamiHelpText());
+            return;
+        }
+        this.printLine(this.user);
+    }
+
+    cmdDate(args) {
+        if (args[0] === '-h' || args[0] === '--help') {
+            this.printLine(this.getDateHelpText());
+            return;
+        }
+        this.printLine(new Date().toString());
     }
 
     printLine(text = '', className = 'terminal-line') {
@@ -1010,6 +1128,34 @@ class RetroTerminal {
         if (this.lessState) {
             this.updateLessViewport();
         }
+    }
+
+    refreshManPages() {
+        this.manPages = this.getDefaultManPages();
+    }
+
+    getDefaultManPages() {
+        return {
+            help: this.wrapManPage('help', 'display help for built-in commands', this.getHelpOverview()),
+            ls: this.wrapManPage('ls', 'list directory contents', this.getLsHelpText()),
+            cd: this.wrapManPage('cd', 'change directory', this.getCdHelpText()),
+            pwd: this.wrapManPage('pwd', 'print working directory', 'Usage: pwd\n\nPrint the current working directory.'),
+            cat: this.wrapManPage('cat', 'concatenate and print files', this.getCatHelpText()),
+            less: this.wrapManPage('less', 'view files with paging', this.getLessHelpText()),
+            clear: this.wrapManPage('clear', 'clear the terminal screen', 'Usage: clear\n\nClears all visible output from the terminal.'),
+            man: this.wrapManPage('man', 'display manual pages', this.getManHelpText()),
+            uname: this.wrapManPage('uname', 'print system information', this.getUnameHelpText()),
+            whoami: this.wrapManPage('whoami', 'print current user name', this.getWhoamiHelpText()),
+            date: this.wrapManPage('date', 'display current date and time', this.getDateHelpText())
+        };
+    }
+
+    wrapManPage(name, description, body) {
+        return [
+            `${name.toUpperCase()}(1) - ${description}`,
+            '',
+            body
+        ].join('\n');
     }
 
     measureCharWidth() {

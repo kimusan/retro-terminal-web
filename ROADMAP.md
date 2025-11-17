@@ -87,8 +87,8 @@ A structured implementation roadmap for the retro-themed terminal website, actin
 
 * Smooth typewriter effect for SSH login
 * Theme variations: amber/green/CRT bloom toggle
-* Fake `uname`, `whoami`, `date` commands
-* “man pages” for commands (man ls → LS(1) style page)
+* Fake `uname`, `whoami`, `date` commands ✅ *Done*
+* “man pages” for commands (man ls → LS(1) style page) ✅ *Done*
 
 ---
 
