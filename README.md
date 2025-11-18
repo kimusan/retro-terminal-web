@@ -3,7 +3,6 @@
 *A fully interactive, filesystem-driven retro terminal website simulation (green-on-black Linux shell) built with PHP + JavaScript.*
 
 ![terminal-preview](docs/preview.png)
-*(Screenshot placeholder — replace with your own)*
 
 ---
 
@@ -108,8 +107,8 @@ retro-terminal/
 Clone the repository:
 
 ```bash
-git clone https://github.com/<yourname>/retro-terminal.git
-cd retro-terminal
+git clone https://github.com/kimusan/retro-termnal-web.git
+cd retro-terminal-web
 ```
 
 ### **3. Deploy**
