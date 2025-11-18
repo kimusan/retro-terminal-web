@@ -206,8 +206,16 @@ class RetroTerminal {
         if (!trimmed) return;
 
         const parts = trimmed.split(/\s+/);
+        if (text.endsWith(' ')) {
+            parts.push('');
+        }
         const first = parts[0];
         const commands = ['help', 'ls', 'cd', 'pwd', 'cat', 'less', 'clear', 'man', 'uname', 'whoami', 'date', 'crt', 'banner', 'figlet', 'find', 'locate', 'grep', 'get'];
+
+        if (first === 'cd') {
+            this.handleCdCompletion(parts.slice());
+            return;
+        }
 
         if (parts.length === 1) {
             const matches = commands.filter(c => c.startsWith(first));
@@ -404,6 +412,83 @@ class RetroTerminal {
                 console.error('Directory fetch failed', err);
                 return [];
             });
+    }
+
+    handleCdCompletion(parts) {
+        const arg = parts.length > 1 ? parts[1] : '';
+        const context = this.getCdCompletionContext(arg);
+        if (!context) return;
+
+        const { virtualDir, fragment, prefix } = context;
+        const dirItems = this.dirCache[virtualDir];
+
+        if (!dirItems) {
+            this.fetchDirectory(virtualDir).then(() => this.handleCdCompletion(parts.slice()));
+            return;
+        }
+
+        const candidates = dirItems
+            .filter(item => item.type === 'dir')
+            .map(item => item.name)
+            .filter(name => !fragment || name.startsWith(fragment));
+
+        if (!candidates.length) {
+            return;
+        }
+
+        if (candidates.length === 1) {
+            const completion = prefix + candidates[0] + '/';
+            this.currentInputEl.textContent = `cd ${completion}`;
+            this.focusInput();
+            return;
+        }
+
+        this.printLine(candidates.map(name => `${name}/`).join('  '));
+        this.focusInput(true);
+    }
+
+    getCdCompletionContext(arg) {
+        const original = arg || '';
+        const expanded = original ? this.expandHomePath(original) : '';
+        let virtualDir = this.currentPath;
+        let fragment = '';
+        let prefix = '';
+
+        if (original.includes('/')) {
+            const idx = original.lastIndexOf('/');
+            prefix = original.slice(0, idx + 1);
+        } else if (original.startsWith('/')) {
+            prefix = '/';
+        }
+
+        if (!original) {
+            fragment = '';
+            virtualDir = this.currentPath;
+            return { virtualDir, fragment, prefix: '' };
+        }
+
+        const slashIdx = expanded.lastIndexOf('/');
+
+        if (slashIdx === -1) {
+            if (expanded.startsWith('/')) {
+                virtualDir = '/';
+                fragment = expanded.slice(1);
+                prefix = '/';
+            } else {
+                virtualDir = this.currentPath;
+                fragment = expanded;
+            }
+        } else {
+            const base = expanded.slice(0, slashIdx);
+            fragment = expanded.slice(slashIdx + 1);
+            if (expanded.startsWith('/')) {
+                virtualDir = base === '' ? '/' : base;
+            } else {
+                virtualDir = base ? this.resolveVirtualPath(this.currentPath, base) : this.currentPath;
+            }
+        }
+
+        return { virtualDir, fragment, prefix };
     }
 
     triggerDownload(url) {
