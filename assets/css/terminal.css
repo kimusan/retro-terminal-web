@@ -190,9 +190,30 @@ body {
     margin: 0;
 }
 
+.mobile-keyboard-button {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    padding: 8px 12px;
+    background: rgba(0, 30, 0, 0.85);
+    color: #0f0;
+    border: 1px solid #0f0;
+    font-family: inherit;
+    font-size: 0.95em;
+    border-radius: 4px;
+    z-index: 5;
+}
+
+
 body.theme-crt {
     background: #050805;
     color: #caffca;
+}
+
+body.theme-crt .mobile-keyboard-button {
+    background: rgba(0, 30, 0, 0.9);
+    border-color: #7f7;
+    color: #afffaf;
 }
 
 body.theme-crt #terminal {

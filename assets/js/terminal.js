@@ -5,6 +5,7 @@ class RetroTerminal {
         this.rootEl = rootEl;
         this.user = rootEl.dataset.shellUser || 'guest';
         this.host = rootEl.dataset.shellHost || window.location.hostname || 'localhost';
+        this.isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
         this.defaultTheme = (rootEl.dataset.defaultTheme || 'classic').toLowerCase();
 
         this.currentPath = '/';
@@ -24,6 +25,7 @@ class RetroTerminal {
         this.crtEnabled = false;
         this.crtPreferenceKey = 'retro-terminal-crt';
         this.bootTime = Date.now();
+        this.mobileKeyboardButton = null;
 
         this.init();
     }
@@ -38,6 +40,7 @@ class RetroTerminal {
         window.addEventListener('resize', () => this.handleResize());
         this.updateTerminalMetrics();
         this.restorePreferences();
+        this.setupMobileKeyboardSupport();
     }
 
     async runFakeSSHSequence() {
@@ -117,7 +120,7 @@ class RetroTerminal {
         this.focusInput();
     }
 
-    focusInput() {
+    focusInput(force = false) {
         if (!this.currentInputEl) return;
         const range = document.createRange();
         const sel = window.getSelection();
@@ -125,6 +128,13 @@ class RetroTerminal {
         range.collapse(false);
         sel.removeAllRanges();
         sel.addRange(range);
+        if (document.activeElement !== this.currentInputEl || force) {
+            try {
+                this.currentInputEl.focus({ preventScroll: true });
+            } catch (e) {
+                this.currentInputEl.focus();
+            }
+        }
     }
 
     handleKeydown(e) {
@@ -1244,6 +1254,30 @@ class RetroTerminal {
             saved = this.defaultTheme === 'crt';
         }
         this.applyCrtMode(saved, true);
+    }
+
+    setupMobileKeyboardSupport() {
+        if (!this.isTouchDevice) return;
+        if (!this.mobileKeyboardButton) {
+            this.createMobileKeyboardButton();
+        }
+        this.rootEl.addEventListener('touchend', () => {
+            if (this.lessState) return;
+            this.focusInput();
+        }, { passive: true });
+    }
+
+    createMobileKeyboardButton() {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'mobile-keyboard-button';
+        button.textContent = 'Show Keyboard';
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.focusInput(true);
+        });
+        document.body.appendChild(button);
+        this.mobileKeyboardButton = button;
     }
 
     applyCrtMode(enabled, skipSave = false) {
