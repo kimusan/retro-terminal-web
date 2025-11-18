@@ -27,6 +27,7 @@ return [
         'enable_ansi_images' => true,
 
         // Explicit file whitelists.
+        // List of extensions that can be listed/read (lowercase, no dots).
         'allowed_extensions' => [
             'txt','md','markdown','json','yaml','yml','ini','cfg','conf','log',
             'csv','png','jpg','jpeg','gif','webp','svg'

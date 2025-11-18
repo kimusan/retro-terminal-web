@@ -131,7 +131,7 @@ function image_to_ascii(string $path, int $targetWidth = 80, bool $withColor = f
 
 function is_extension_allowed(?string $ext, array $allowed): bool {
     if ($ext === null) {
-        return false;
+        return true;
     }
     if (!$allowed) {
         return true;
