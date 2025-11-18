@@ -27,6 +27,7 @@ class RetroTerminal {
         this.bootTime = Date.now();
         this.mobileKeyboardButton = null;
         this.hiddenInput = null;
+        this.previousPath = '/';
 
         this.init();
     }
@@ -333,6 +334,50 @@ class RetroTerminal {
         return base + '/' + arg;
     }
 
+    expandHomePath(arg) {
+        if (!arg || arg === '~') {
+            return '/';
+        }
+        if (arg.startsWith('~/')) {
+            return '/' + arg.slice(2);
+        }
+        return arg;
+    }
+
+    setCurrentPath(newPath, announce = false) {
+        if (!newPath) return;
+        const normalized = newPath === '' ? '/' : newPath;
+        if (normalized === this.currentPath) {
+            if (announce) {
+                this.printLine(this.currentPath);
+            }
+            return;
+        }
+        this.previousPath = this.currentPath;
+        this.currentPath = normalized;
+        if (announce) {
+            this.printLine(this.currentPath);
+        }
+    }
+
+    changeDirectory(newPath, announce = false) {
+        const url = `${this.apiBase}?action=list&path=${encodeURIComponent(newPath)}`;
+
+        return fetch(url)
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    this.printLine(`cd: ${data.error}: ${newPath}`, 'terminal-error');
+                } else {
+                    this.setCurrentPath(newPath, announce);
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                this.printLine('cd: error changing directory', 'terminal-error');
+            });
+    }
+
     formatLsDate(epochSeconds) {
         const d = new Date(epochSeconds * 1000);
         const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -394,6 +439,11 @@ class RetroTerminal {
             '',
             'Supported options:',
             '  -h, --help    display this help and exit',
+            '',
+            'Special targets:',
+            '  cd           Go to home (/)',
+            '  cd ~[/path]  Jump to home or a subpath',
+            '  cd -         Switch to previous directory',
             '',
             'This is a simulated cd; it only affects the virtual path.'
         ].join('\n');
@@ -653,14 +703,24 @@ class RetroTerminal {
         }
 
         if (!args.length) {
-            this.currentPath = '/';
+            this.setCurrentPath('/');
             return;
         }
 
-        const target = args[0];
+        const rawTarget = args[0];
+
+        if (rawTarget === '-') {
+            if (!this.previousPath) {
+                this.printLine('cd: previous directory not set', 'terminal-error');
+                return;
+            }
+            return this.changeDirectory(this.previousPath, true);
+        }
+
+        let target = this.expandHomePath(rawTarget);
 
         if (target === '/') {
-            this.currentPath = '/';
+            this.setCurrentPath('/');
             return;
         }
 
@@ -668,28 +728,14 @@ class RetroTerminal {
             if (this.currentPath !== '/') {
                 const parts = this.currentPath.split('/').filter(Boolean);
                 parts.pop();
-                this.currentPath = '/' + parts.join('/');
-                if (this.currentPath === '') this.currentPath = '/';
+                const next = '/' + parts.join('/');
+                this.setCurrentPath(next === '' ? '/' : next);
             }
             return;
         }
 
         const newPath = this.resolveVirtualPath(this.currentPath, target);
-        const url = `${this.apiBase}?action=list&path=${encodeURIComponent(newPath)}`;
-
-        return fetch(url)
-            .then(res => res.json())
-            .then(data => {
-                if (data.error) {
-                    this.printLine(`cd: ${data.error}: ${target}`, 'terminal-error');
-                } else {
-                    this.currentPath = newPath;
-                }
-            })
-            .catch(err => {
-                console.error(err);
-                this.printLine('cd: error changing directory', 'terminal-error');
-            });
+        return this.changeDirectory(newPath);
     }
 
     cmdCat(args) {
