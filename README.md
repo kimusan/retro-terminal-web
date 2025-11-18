@@ -33,6 +33,7 @@ Perfect for:
 * Markdown renderer with headings/lists/bold/italic, clickable links, and inline ANSI art
 * Responsive layout recalculates pager height + ASCII art width on resize
 * Toggleable CRT bloom/scanline filter via the `crt` command
+* Mobile-friendly keyboard helper so touch devices keep the software keyboard open
 
 ### **📁 Filesystem-Driven Content**
 

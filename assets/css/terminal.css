@@ -204,6 +204,16 @@ body {
     z-index: 5;
 }
 
+.terminal-hidden-input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+    width: 1px;
+    height: 1px;
+    left: -9999px;
+    top: auto;
+}
+
 
 body.theme-crt {
     background: #050805;

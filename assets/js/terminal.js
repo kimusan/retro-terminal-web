@@ -26,6 +26,7 @@ class RetroTerminal {
         this.crtPreferenceKey = 'retro-terminal-crt';
         this.bootTime = Date.now();
         this.mobileKeyboardButton = null;
+        this.hiddenInput = null;
 
         this.init();
     }
@@ -41,6 +42,7 @@ class RetroTerminal {
         this.updateTerminalMetrics();
         this.restorePreferences();
         this.setupMobileKeyboardSupport();
+        this.createHiddenInput();
     }
 
     async runFakeSSHSequence() {
@@ -106,6 +108,14 @@ class RetroTerminal {
         inputSpan.className = 'terminal-input';
         inputSpan.contentEditable = 'true';
         inputSpan.spellcheck = false;
+        inputSpan.autocapitalize = 'none';
+        inputSpan.autocorrect = 'off';
+        inputSpan.autocomplete = 'off';
+        inputSpan.setAttribute('autocapitalize', 'none');
+        inputSpan.setAttribute('autocorrect', 'off');
+        inputSpan.setAttribute('autocomplete', 'off');
+        inputSpan.setAttribute('inputmode', 'text');
+        inputSpan.setAttribute('data-gramm', 'false');
         lineEl.appendChild(inputSpan);
 
         const cursorSpan = document.createElement('span');
@@ -118,6 +128,9 @@ class RetroTerminal {
 
         this.currentInputEl = inputSpan;
         this.focusInput();
+        if (this.isTouchDevice) {
+            setTimeout(() => this.focusInput(true), 0);
+        }
     }
 
     focusInput(force = false) {
@@ -223,7 +236,12 @@ class RetroTerminal {
     }
 
     executeCommand(command) {
-        this.currentInputEl.contentEditable = 'false';
+        if (this.currentInputEl) {
+            this.currentInputEl.contentEditable = 'false';
+        }
+        if (this.isTouchDevice) {
+            this.focusHiddenInput();
+        }
         this.currentInputEl = null;
         this.history.push(command);
         this.historyIndex = -1;
@@ -1278,6 +1296,30 @@ class RetroTerminal {
         });
         document.body.appendChild(button);
         this.mobileKeyboardButton = button;
+    }
+
+    createHiddenInput() {
+        if (!this.isTouchDevice || this.hiddenInput) return;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'terminal-hidden-input';
+        input.setAttribute('aria-hidden', 'true');
+        input.tabIndex = -1;
+        input.autocapitalize = 'none';
+        input.autocomplete = 'off';
+        input.autocorrect = 'off';
+        input.spellcheck = false;
+        document.body.appendChild(input);
+        this.hiddenInput = input;
+    }
+
+    focusHiddenInput() {
+        if (!this.hiddenInput) return;
+        try {
+            this.hiddenInput.focus({ preventScroll: true });
+        } catch (e) {
+            this.hiddenInput.focus();
+        }
     }
 
     applyCrtMode(enabled, skipSave = false) {
