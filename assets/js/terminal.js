@@ -207,7 +207,7 @@ class RetroTerminal {
 
         const parts = trimmed.split(/\s+/);
         const first = parts[0];
-        const commands = ['help', 'ls', 'cd', 'pwd', 'cat', 'less', 'clear', 'man', 'uname', 'whoami', 'date', 'crt', 'banner', 'figlet', 'find', 'locate'];
+        const commands = ['help', 'ls', 'cd', 'pwd', 'cat', 'less', 'clear', 'man', 'uname', 'whoami', 'date', 'crt', 'banner', 'figlet', 'find', 'locate', 'grep', 'get'];
 
         if (parts.length === 1) {
             const matches = commands.filter(c => c.startsWith(first));
@@ -376,6 +376,15 @@ class RetroTerminal {
                 console.error(err);
                 this.printLine('cd: error changing directory', 'terminal-error');
             });
+    }
+
+    triggerDownload(url) {
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.style.display = 'none';
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
     }
 
     formatLsDate(epochSeconds) {
@@ -562,6 +571,17 @@ class RetroTerminal {
         ].join('\n');
     }
 
+    getGetHelpText() {
+        return [
+            'Usage: get <FILE>',
+            '',
+            'Download FILE if downloading is allowed for its extension.',
+            '',
+            'Examples:',
+            '  get releases/site.zip'
+        ].join('\n');
+    }
+
     getHelpOverview() {
         return [
             'Available commands:',
@@ -581,6 +601,7 @@ class RetroTerminal {
             '  find [p] pat  Search within current tree',
             '  locate term   Search entire content tree',
             '  grep [-rl]    Search files for text',
+            '  get <file>    Download permitted files',
             '  clear         Clear the screen',
             '',
             'Most commands support -h or --help for more info.'
@@ -1076,6 +1097,33 @@ class RetroTerminal {
             .catch(err => {
                 console.error(err);
                 this.printLine('grep: error searching files', 'terminal-error');
+            });
+    }
+
+    cmdGet(args) {
+        if (!args.length) {
+            this.printLine('get: missing file operand', 'terminal-error');
+            return;
+        }
+
+        const target = args[0];
+        const virtualPath = this.resolveVirtualPath(this.currentPath, target);
+        const checkUrl = `${this.apiBase}?action=download&check=1&path=${encodeURIComponent(virtualPath)}`;
+
+        return fetch(checkUrl)
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    this.printLine(`get: ${data.error}`, 'terminal-error');
+                    return;
+                }
+                const downloadUrl = `${this.apiBase}?action=download&path=${encodeURIComponent(virtualPath)}`;
+                this.triggerDownload(downloadUrl);
+                this.printLine(`Downloading ${target}...`);
+            })
+            .catch(err => {
+                console.error(err);
+                this.printLine('get: error initiating download', 'terminal-error');
             });
     }
 
@@ -1730,7 +1778,8 @@ class RetroTerminal {
             figlet: this.wrapManPage('figlet', 'render text in ASCII art', this.getFigletHelpText()),
             find: this.wrapManPage('find', 'search within the current tree', this.getFindHelpText()),
             locate: this.wrapManPage('locate', 'search the entire content tree', this.getLocateHelpText()),
-            grep: this.wrapManPage('grep', 'search file contents', this.getGrepHelpText())
+            grep: this.wrapManPage('grep', 'search file contents', this.getGrepHelpText()),
+            get: this.wrapManPage('get', 'download allowed files', this.getGetHelpText())
         };
     }
 

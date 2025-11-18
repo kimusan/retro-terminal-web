@@ -6,6 +6,9 @@
 header('Content-Type: application/json; charset=utf-8');
 
 $config = require __DIR__ . '/config.php';
+$options = $config['options'] ?? [];
+$allowedExtensions = array_map('strtolower', $options['allowed_extensions'] ?? []);
+$downloadableExtensions = array_map('strtolower', $options['downloadable_extensions'] ?? []);
 
 function respond($data, int $code = 200) {
     http_response_code($code);
@@ -126,6 +129,26 @@ function image_to_ascii(string $path, int $targetWidth = 80, bool $withColor = f
     return implode("\n", $lines);
 }
 
+function is_extension_allowed(?string $ext, array $allowed): bool {
+    if ($ext === null) {
+        return false;
+    }
+    if (!$allowed) {
+        return true;
+    }
+    return in_array(strtolower($ext), $allowed, true);
+}
+
+function is_downloadable_extension(?string $ext, array $downloadable): bool {
+    if ($ext === null) {
+        return false;
+    }
+    if (!$downloadable) {
+        return false;
+    }
+    return in_array(strtolower($ext), $downloadable, true);
+}
+
 $action = $_GET['action'] ?? null;
 
 switch ($action) {
@@ -146,6 +169,10 @@ switch ($action) {
             $ext  = strtolower(pathinfo($name, PATHINFO_EXTENSION));
 
             if ($name === '_meta') {
+                continue;
+            }
+
+            if (!$fileinfo->isDir() && !is_extension_allowed($ext, $allowedExtensions)) {
                 continue;
             }
 
@@ -176,6 +203,10 @@ switch ($action) {
         }
 
         $ext = strtolower(pathinfo($realPath, PATHINFO_EXTENSION));
+
+        if (!is_extension_allowed($ext, $allowedExtensions)) {
+            respond(['error' => 'Access denied'], 403);
+        }
 
         if ($ext === 'md') {
             $content = file_get_contents($realPath);
@@ -219,6 +250,9 @@ switch ($action) {
         if (!in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp'], true)) {
             respond(['error' => 'Unsupported image type', 'path' => $virtualPath], 400);
         }
+        if (!is_extension_allowed($ext, $allowedExtensions)) {
+            respond(['error' => 'Access denied'], 403);
+        }
 
         $ascii = image_to_ascii($realPath, $width, $withColor);
         if ($ascii === null) {
@@ -250,11 +284,12 @@ switch ($action) {
         $results = [];
 
         $directoryIterator = new RecursiveDirectoryIterator($startReal, FilesystemIterator::SKIP_DOTS);
-        $filter = new RecursiveCallbackFilterIterator($directoryIterator, function ($current) use ($startReal) {
-            if ($current->isDir() && $current->getFilename() === '_meta') {
-                return false;
+        $filter = new RecursiveCallbackFilterIterator($directoryIterator, function ($current) use ($allowedExtensions) {
+            if ($current->isDir()) {
+                return $current->getFilename() !== '_meta';
             }
-            return true;
+            $ext = strtolower(pathinfo($current->getFilename(), PATHINFO_EXTENSION));
+            return is_extension_allowed($ext, $allowedExtensions);
         });
         $iterator = new RecursiveIteratorIterator($filter, RecursiveIteratorIterator::SELF_FIRST);
 
@@ -275,6 +310,10 @@ switch ($action) {
 
             $type = $fileinfo->isDir() ? 'dir' : 'file';
             $ext  = strtolower(pathinfo($fileinfo->getFilename(), PATHINFO_EXTENSION));
+
+            if (!$fileinfo->isDir() && !is_extension_allowed($ext, $allowedExtensions)) {
+                continue;
+            }
             if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp'], true)) {
                 $type = 'image';
             }
@@ -317,15 +356,20 @@ switch ($action) {
 
         $iterable = [];
         if (is_file($startReal)) {
+            $ext = strtolower(pathinfo($startReal, PATHINFO_EXTENSION));
+            if (!is_extension_allowed($ext, $allowedExtensions)) {
+                respond(['error' => 'Access denied'], 403);
+            }
             $iterable[] = $startReal;
         } else {
             if ($recursive) {
                 $directoryIterator = new RecursiveDirectoryIterator($startReal, FilesystemIterator::SKIP_DOTS);
-                $filter = new RecursiveCallbackFilterIterator($directoryIterator, function ($current) {
-                    if ($current->isDir() && $current->getFilename() === '_meta') {
-                        return false;
+                $filter = new RecursiveCallbackFilterIterator($directoryIterator, function ($current) use ($allowedExtensions) {
+                    if ($current->isDir()) {
+                        return $current->getFilename() !== '_meta';
                     }
-                    return true;
+                    $ext = strtolower(pathinfo($current->getFilename(), PATHINFO_EXTENSION));
+                    return is_extension_allowed($ext, $allowedExtensions);
                 });
                 $iterator = new RecursiveIteratorIterator($filter, RecursiveIteratorIterator::SELF_FIRST);
                 foreach ($iterator as $fileinfo) {
@@ -339,6 +383,8 @@ switch ($action) {
                     if ($fileinfo->isDot()) continue;
                     if ($fileinfo->isDir()) continue;
                     if ($fileinfo->getFilename() === '_meta') continue;
+                    $ext = strtolower(pathinfo($fileinfo->getFilename(), PATHINFO_EXTENSION));
+                    if (!is_extension_allowed($ext, $allowedExtensions)) continue;
                     $iterable[] = $fileinfo->getPathname();
                 }
             }
@@ -358,6 +404,9 @@ switch ($action) {
 
             $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
             if ($ext && !in_array($ext, $textExtensions, true)) {
+                continue;
+            }
+            if (!is_extension_allowed($ext, $allowedExtensions)) {
                 continue;
             }
 
@@ -404,3 +453,33 @@ switch ($action) {
     default:
         respond(['error' => 'Unknown or missing action'], 400);
 }
+    case 'download':
+        $virtualPath = $_GET['path'] ?? '';
+        $checkOnly   = isset($_GET['check']);
+
+        $realPath = resolve_path($virtualPath, $contentRoot);
+        if (!$realPath || !is_file($realPath)) {
+            if ($checkOnly) {
+                respond(['error' => 'File not found'], 404);
+            }
+            respond(['error' => 'File not found', 'path' => $virtualPath], 404);
+        }
+
+        $ext = strtolower(pathinfo($realPath, PATHINFO_EXTENSION));
+        if (!is_downloadable_extension($ext, $downloadableExtensions)) {
+            if ($checkOnly) {
+                respond(['error' => 'Download not allowed for this file'], 403);
+            }
+            respond(['error' => 'Download not allowed'], 403);
+        }
+
+        if ($checkOnly) {
+            respond(['ok' => true, 'path' => $virtualPath]);
+        }
+
+        $filename = basename($realPath);
+        header('Content-Type: application/octet-stream');
+        header('Content-Disposition: attachment; filename="' . addslashes($filename) . '"');
+        header('Content-Length: ' . filesize($realPath));
+        readfile($realPath);
+        exit;

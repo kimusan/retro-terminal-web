@@ -33,7 +33,8 @@ Perfect for:
 * Responsive layout recalculates pager height + ASCII art width on resize
 * Toggleable CRT bloom/scanline filter via the `crt` command
 * Mobile-friendly keyboard helper so touch devices keep the software keyboard open
-* Faux utility commands (`banner`, `figlet`, `find`, `locate`, etc.) for extra realism
+* Configurable file-type whitelist + download list (exposed through the `get` command)
+* Faux utility commands (`banner`, `figlet`, `find`, `locate`, `grep`, `get`, etc.) for extra realism
 
 ### **📁 Filesystem-Driven Content**
 
@@ -141,12 +142,14 @@ return [
   'default_theme' => 'classic', // or 'crt'
   'options' => [
       'enable_ansi_images' => true,
-      'max_output_lines'   => 200
+      'max_output_lines'   => 200,
+      'allowed_extensions' => ['md', 'txt', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'],
+      'downloadable_extensions' => ['zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', '7z', 'iso', 'img', 'bin', 'appimage'],
   ],
 ];
-```
 
-Set `'default_theme' => 'crt'` to enable the CRT filter by default (visitors can still toggle it via the `crt` command).
+Set `'default_theme' => 'crt'` to enable the CRT filter by default (visitors can still toggle it via the `crt` command). Adjust the extension lists to control which files show up in `ls`/`cat` versus which binaries are exposed through the `get` download command.
+```
 
 ### Changing terminal identity:
 

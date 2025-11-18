@@ -25,5 +25,14 @@ return [
 
         // Whether to allow ASCII/ANSI-like image rendering.
         'enable_ansi_images' => true,
+
+        // Explicit file whitelists.
+        'allowed_extensions' => [
+            'txt','md','markdown','json','yaml','yml','ini','cfg','conf','log',
+            'csv','png','jpg','jpeg','gif','webp','svg'
+        ],
+        'downloadable_extensions' => [
+            'zip','tar','gz','tgz','bz2','xz','7z','rar','iso','img','bin','appimage'
+        ],
     ],
 ];
