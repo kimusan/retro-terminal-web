@@ -64,6 +64,7 @@ Everything the user sees comes from the `content/` directory.
 | `figlet [-f font] text` | Render ASCII art text (block or mini font)      |
 | `find [path] pattern`   | Search a folder tree for names containing text  |
 | `locate term`           | Search the entire site content for a term       |
+| `grep [-rl] pat [path]` | Search file contents (with recursive, names-only support) |
 | `clear`                 | Clear screen                                    |
 
 ### **🖼 Image → ASCII Rendering**

@@ -304,6 +304,9 @@ class RetroTerminal {
             case 'locate':
                 result = this.cmdLocate(args);
                 break;
+            case 'grep':
+                result = this.cmdGrep(args);
+                break;
             default:
                 this.printLine(`${cmd}: command not found`, 'terminal-error');
                 break;
@@ -489,6 +492,18 @@ class RetroTerminal {
         ].join('\n');
     }
 
+    getGrepHelpText() {
+        return [
+            'Usage: grep [-r] [-l] PATTERN [PATH]',
+            '',
+            'Search PATH (file or directory) for PATTERN.',
+            '',
+            'Options:',
+            '  -r   search directories recursively',
+            '  -l   print only matching filenames'
+        ].join('\n');
+    }
+
     getFigletHelpText() {
         return [
             'Usage: figlet [-f block|mini] text',
@@ -515,6 +530,7 @@ class RetroTerminal {
             '  figlet <text> Render ASCII art text',
             '  find [p] pat  Search within current tree',
             '  locate term   Search entire content tree',
+            '  grep [-rl]    Search files for text',
             '  clear         Clear the screen',
             '',
             'Most commands support -h or --help for more info.'
@@ -941,6 +957,80 @@ class RetroTerminal {
 
         const term = args.join(' ').trim();
         return this.performSearch('/', term, 'locate');
+    }
+
+    cmdGrep(args) {
+        if (args[0] === '-h' || args[0] === '--help') {
+            this.printLine(this.getGrepHelpText());
+            return;
+        }
+
+        if (!args.length) {
+            this.printLine('grep: missing PATTERN', 'terminal-error');
+            return;
+        }
+
+        let recursive = false;
+        let namesOnly = false;
+        let pattern = null;
+        let pathArg = null;
+
+        for (let i = 0; i < args.length; i++) {
+            const arg = args[i];
+            if (arg === '-r') {
+                recursive = true;
+            } else if (arg === '-l') {
+                namesOnly = true;
+            } else if (arg.startsWith('-')) {
+                this.printLine(`grep: unsupported option ${arg}`, 'terminal-error');
+                return;
+            } else if (pattern === null) {
+                pattern = arg;
+            } else if (pathArg === null) {
+                pathArg = arg;
+            } else {
+                this.printLine('grep: only one path is supported in this simulation', 'terminal-error');
+                return;
+            }
+        }
+
+        if (!pattern) {
+            this.printLine('grep: missing PATTERN', 'terminal-error');
+            return;
+        }
+
+        const virtualPath = pathArg
+            ? this.resolveVirtualPath(this.currentPath, pathArg)
+            : this.currentPath;
+
+        const url = `${this.apiBase}?action=grep&term=${encodeURIComponent(pattern)}&path=${encodeURIComponent(virtualPath)}&recursive=${recursive ? 1 : 0}&names_only=${namesOnly ? 1 : 0}`;
+        return fetch(url)
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    this.printLine(`grep: ${data.error}`, 'terminal-error');
+                    return;
+                }
+                const matches = Array.isArray(data.results) ? data.results : [];
+                if (!matches.length) {
+                    this.printLine(`grep: no matches for "${pattern}"`);
+                    return;
+                }
+                matches.forEach(item => {
+                    if (namesOnly) {
+                        this.printLine(item.path);
+                    } else {
+                        this.printLine(`${item.path}:`);
+                        (item.matches || []).forEach(match => {
+                            this.printLine(`  ${match.line}: ${match.text}`);
+                        });
+                    }
+                });
+            })
+            .catch(err => {
+                console.error(err);
+                this.printLine('grep: error searching files', 'terminal-error');
+            });
     }
 
     printLine(text = '', className = 'terminal-line') {
@@ -1593,7 +1683,8 @@ class RetroTerminal {
             crt: this.wrapManPage('crt', 'toggle CRT visual filter', this.getCrtHelpText()),
             figlet: this.wrapManPage('figlet', 'render text in ASCII art', this.getFigletHelpText()),
             find: this.wrapManPage('find', 'search within the current tree', this.getFindHelpText()),
-            locate: this.wrapManPage('locate', 'search the entire content tree', this.getLocateHelpText())
+            locate: this.wrapManPage('locate', 'search the entire content tree', this.getLocateHelpText()),
+            grep: this.wrapManPage('grep', 'search file contents', this.getGrepHelpText())
         };
     }
 

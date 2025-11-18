@@ -293,6 +293,114 @@ switch ($action) {
         ]);
         break;
 
+    case 'grep':
+        $term = $_GET['term'] ?? '';
+        if ($term === '') {
+            respond(['error' => 'Missing search term'], 400);
+        }
+        $startVirtual = $_GET['path'] ?? '/';
+        $startReal = resolve_path($startVirtual, $contentRoot);
+        if (!$startReal || (!is_dir($startReal) && !is_file($startReal))) {
+            respond(['error' => 'Invalid start path', 'path' => $startVirtual], 400);
+        }
+
+        $recursive = !empty($_GET['recursive']);
+        $namesOnly = !empty($_GET['names_only']);
+        $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 200;
+        $limit = max(1, min($limit, 1000));
+        $termLen = strlen($term);
+
+        $textExtensions = ['txt','md','json','js','ts','tsx','jsx','css','scss','sass','html','htm','xml','yml','yaml','ini','cfg','conf','log','php','py','rb'];
+
+        $results = [];
+        $processed = 0;
+
+        $iterable = [];
+        if (is_file($startReal)) {
+            $iterable[] = $startReal;
+        } else {
+            if ($recursive) {
+                $directoryIterator = new RecursiveDirectoryIterator($startReal, FilesystemIterator::SKIP_DOTS);
+                $filter = new RecursiveCallbackFilterIterator($directoryIterator, function ($current) {
+                    if ($current->isDir() && $current->getFilename() === '_meta') {
+                        return false;
+                    }
+                    return true;
+                });
+                $iterator = new RecursiveIteratorIterator($filter, RecursiveIteratorIterator::SELF_FIRST);
+                foreach ($iterator as $fileinfo) {
+                    if ($fileinfo->isFile()) {
+                        $iterable[] = $fileinfo->getPathname();
+                    }
+                }
+            } else {
+                $dir = new DirectoryIterator($startReal);
+                foreach ($dir as $fileinfo) {
+                    if ($fileinfo->isDot()) continue;
+                    if ($fileinfo->isDir()) continue;
+                    if ($fileinfo->getFilename() === '_meta') continue;
+                    $iterable[] = $fileinfo->getPathname();
+                }
+            }
+        }
+
+        foreach ($iterable as $filePath) {
+            if ($processed >= $limit) {
+                break;
+            }
+            $relative = substr($filePath, strlen($contentRoot));
+            $relative = str_replace(DIRECTORY_SEPARATOR, '/', $relative);
+            $virtual = '/' . ltrim($relative, '/');
+
+            if (strpos($virtual, '/_meta/') !== false) {
+                continue;
+            }
+
+            $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+            if ($ext && !in_array($ext, $textExtensions, true)) {
+                continue;
+            }
+
+            $content = @file($filePath, FILE_IGNORE_NEW_LINES);
+            if ($content === false) {
+                continue;
+            }
+
+            $matches = [];
+            foreach ($content as $idx => $line) {
+                if (strpos($line, $term) !== false) {
+                    if ($namesOnly) {
+                        $matches = true;
+                        break;
+                    }
+                    $snippet = $line;
+                    if (strlen($snippet) > 200) {
+                        $snippet = substr($snippet, 0, 200) . '...';
+                    }
+                    $matches[] = [
+                        'line' => $idx + 1,
+                        'text' => $snippet
+                    ];
+                }
+            }
+
+            if ($matches) {
+                $results[] = [
+                    'path'    => $virtual,
+                    'matches' => $namesOnly ? [] : $matches,
+                ];
+                $processed++;
+            }
+        }
+
+        respond([
+            'path'    => $startVirtual,
+            'term'    => $term,
+            'results' => $results,
+            'names_only' => $namesOnly ? 1 : 0,
+        ]);
+        break;
+
     default:
         respond(['error' => 'Unknown or missing action'], 400);
 }
