@@ -308,6 +308,9 @@ class RetroTerminal {
             case 'grep':
                 result = this.cmdGrep(args);
                 break;
+            case 'get':
+                result = this.cmdGet(args);
+                break;
             default:
                 this.printLine(`${cmd}: command not found`, 'terminal-error');
                 break;
