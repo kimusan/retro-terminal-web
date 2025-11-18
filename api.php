@@ -130,7 +130,7 @@ function image_to_ascii(string $path, int $targetWidth = 80, bool $withColor = f
 }
 
 function is_extension_allowed(?string $ext, array $allowed): bool {
-    if ($ext === null) {
+    if ($ext === null || $ext === '') {
         return true;
     }
     if (!$allowed) {
@@ -450,9 +450,6 @@ switch ($action) {
         ]);
         break;
 
-    default:
-        respond(['error' => 'Unknown or missing action'], 400);
-}
     case 'download':
         $virtualPath = $_GET['path'] ?? '';
         $checkOnly   = isset($_GET['check']);
@@ -483,3 +480,7 @@ switch ($action) {
         header('Content-Length: ' . filesize($realPath));
         readfile($realPath);
         exit;
+
+    default:
+        respond(['error' => 'Unknown or missing action'], 400);
+}
