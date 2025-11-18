@@ -139,6 +139,23 @@ function is_extension_allowed(?string $ext, array $allowed): bool {
     return in_array(strtolower($ext), $allowed, true);
 }
 
+function is_extension_visible(?string $ext, array $allowed, array $downloadable): bool {
+    if ($ext === null || $ext === '') {
+        return true;
+    }
+    $ext = strtolower($ext);
+    if ($allowed && in_array($ext, $allowed, true)) {
+        return true;
+    }
+    if ($downloadable && in_array($ext, $downloadable, true)) {
+        return true;
+    }
+    if (!$allowed && !$downloadable) {
+        return true;
+    }
+    return false;
+}
+
 function is_downloadable_extension(?string $ext, array $downloadable): bool {
     if ($ext === null) {
         return false;
@@ -172,7 +189,7 @@ switch ($action) {
                 continue;
             }
 
-            if (!$fileinfo->isDir() && !is_extension_allowed($ext, $allowedExtensions)) {
+            if (!$fileinfo->isDir() && !is_extension_visible($ext, $allowedExtensions, $downloadableExtensions)) {
                 continue;
             }
 
@@ -284,12 +301,12 @@ switch ($action) {
         $results = [];
 
         $directoryIterator = new RecursiveDirectoryIterator($startReal, FilesystemIterator::SKIP_DOTS);
-        $filter = new RecursiveCallbackFilterIterator($directoryIterator, function ($current) use ($allowedExtensions) {
+        $filter = new RecursiveCallbackFilterIterator($directoryIterator, function ($current) use ($allowedExtensions, $downloadableExtensions) {
             if ($current->isDir()) {
                 return $current->getFilename() !== '_meta';
             }
             $ext = strtolower(pathinfo($current->getFilename(), PATHINFO_EXTENSION));
-            return is_extension_allowed($ext, $allowedExtensions);
+            return is_extension_visible($ext, $allowedExtensions, $downloadableExtensions);
         });
         $iterator = new RecursiveIteratorIterator($filter, RecursiveIteratorIterator::SELF_FIRST);
 
@@ -364,12 +381,12 @@ switch ($action) {
         } else {
             if ($recursive) {
                 $directoryIterator = new RecursiveDirectoryIterator($startReal, FilesystemIterator::SKIP_DOTS);
-                $filter = new RecursiveCallbackFilterIterator($directoryIterator, function ($current) use ($allowedExtensions) {
+                $filter = new RecursiveCallbackFilterIterator($directoryIterator, function ($current) use ($allowedExtensions, $downloadableExtensions) {
                     if ($current->isDir()) {
                         return $current->getFilename() !== '_meta';
                     }
                     $ext = strtolower(pathinfo($current->getFilename(), PATHINFO_EXTENSION));
-                    return is_extension_allowed($ext, $allowedExtensions);
+                    return is_extension_visible($ext, $allowedExtensions, $downloadableExtensions);
                 });
                 $iterator = new RecursiveIteratorIterator($filter, RecursiveIteratorIterator::SELF_FIRST);
                 foreach ($iterator as $fileinfo) {
@@ -384,7 +401,7 @@ switch ($action) {
                     if ($fileinfo->isDir()) continue;
                     if ($fileinfo->getFilename() === '_meta') continue;
                     $ext = strtolower(pathinfo($fileinfo->getFilename(), PATHINFO_EXTENSION));
-                    if (!is_extension_allowed($ext, $allowedExtensions)) continue;
+                    if (!is_extension_visible($ext, $allowedExtensions, $downloadableExtensions)) continue;
                     $iterable[] = $fileinfo->getPathname();
                 }
             }
