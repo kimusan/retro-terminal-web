@@ -223,7 +223,11 @@ class RetroTerminal {
         }
 
         const argToken = parts[parts.length - 1];
-        const dirItems = this.dirCache[this.currentPath] || [];
+        const dirItems = this.dirCache[this.currentPath];
+        if (!dirItems) {
+            this.fetchDirectory(this.currentPath).then(() => this.handleTabCompletion());
+            return;
+        }
         const candidates = dirItems.map(it => it.name).filter(name => name.startsWith(argToken));
 
         if (candidates.length === 1) {
@@ -372,12 +376,33 @@ class RetroTerminal {
                 if (data.error) {
                     this.printLine(`cd: ${data.error}: ${newPath}`, 'terminal-error');
                 } else {
+                    if (data && Array.isArray(data.items)) {
+                        this.dirCache[newPath] = data.items;
+                    }
                     this.setCurrentPath(newPath, announce);
                 }
             })
             .catch(err => {
                 console.error(err);
                 this.printLine('cd: error changing directory', 'terminal-error');
+            });
+    }
+
+    fetchDirectory(path) {
+        const virtualPath = path || '/';
+        const url = `${this.apiBase}?action=list&path=${encodeURIComponent(virtualPath)}`;
+        return fetch(url)
+            .then(res => res.json())
+            .then(data => {
+                if (data && Array.isArray(data.items)) {
+                    this.dirCache[virtualPath] = data.items;
+                    return data.items;
+                }
+                return [];
+            })
+            .catch(err => {
+                console.error('Directory fetch failed', err);
+                return [];
             });
     }
 
