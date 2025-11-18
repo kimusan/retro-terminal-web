@@ -34,6 +34,7 @@ Perfect for:
 * Responsive layout recalculates pager height + ASCII art width on resize
 * Toggleable CRT bloom/scanline filter via the `crt` command
 * Mobile-friendly keyboard helper so touch devices keep the software keyboard open
+* Faux utility commands (`banner`, `figlet`, `find`, `locate`, etc.) for extra realism
 
 ### **📁 Filesystem-Driven Content**
 
@@ -60,6 +61,9 @@ Everything the user sees comes from the `content/` directory.
 | `date`                  | Display the current date and time               |
 | `banner`                | Display a retro system info summary             |
 | `crt [mode]`            | Toggle the CRT filter (on/off/toggle/status)    |
+| `figlet [-f font] text` | Render ASCII art text (block or mini font)      |
+| `find [path] pattern`   | Search a folder tree for names containing text  |
+| `locate term`           | Search the entire site content for a term       |
 | `clear`                 | Clear screen                                    |
 
 ### **🖼 Image → ASCII Rendering**

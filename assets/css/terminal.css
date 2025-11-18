@@ -123,6 +123,11 @@ body {
     font-family: inherit;
 }
 
+.terminal-figlet {
+    white-space: pre;
+    font-weight: bold;
+}
+
 .terminal-markdown {
     display: block;
     white-space: normal;

@@ -232,6 +232,67 @@ switch ($action) {
         ]);
         break;
 
+    case 'search':
+        $term = trim($_GET['term'] ?? '');
+        if ($term === '') {
+            respond(['error' => 'Missing search term'], 400);
+        }
+
+        $startVirtual = $_GET['path'] ?? '/';
+        $startReal = resolve_path($startVirtual, $contentRoot);
+        if (!$startReal || !is_dir($startReal)) {
+            respond(['error' => 'Invalid start path', 'path' => $startVirtual], 400);
+        }
+
+        $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 200;
+        $limit = max(1, min($limit, 500));
+        $lcTerm = strtolower($term);
+        $results = [];
+
+        $directoryIterator = new RecursiveDirectoryIterator($startReal, FilesystemIterator::SKIP_DOTS);
+        $filter = new RecursiveCallbackFilterIterator($directoryIterator, function ($current) use ($startReal) {
+            if ($current->isDir() && $current->getFilename() === '_meta') {
+                return false;
+            }
+            return true;
+        });
+        $iterator = new RecursiveIteratorIterator($filter, RecursiveIteratorIterator::SELF_FIRST);
+
+        foreach ($iterator as $fileinfo) {
+            if (count($results) >= $limit) {
+                break;
+            }
+            $fullPath = $fileinfo->getPathname();
+            $relative = substr($fullPath, strlen($contentRoot));
+            $relative = str_replace(DIRECTORY_SEPARATOR, '/', $relative);
+            $virtual = '/' . ltrim($relative, '/');
+            $nameLower = strtolower($fileinfo->getFilename());
+            $pathLower = strtolower($virtual);
+
+            if (strpos($nameLower, $lcTerm) === false && strpos($pathLower, $lcTerm) === false) {
+                continue;
+            }
+
+            $type = $fileinfo->isDir() ? 'dir' : 'file';
+            $ext  = strtolower(pathinfo($fileinfo->getFilename(), PATHINFO_EXTENSION));
+            if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp'], true)) {
+                $type = 'image';
+            }
+
+            $results[] = [
+                'path' => $virtual,
+                'name' => $fileinfo->getFilename(),
+                'type' => $type,
+            ];
+        }
+
+        respond([
+            'path'    => $startVirtual,
+            'term'    => $term,
+            'results' => $results,
+        ]);
+        break;
+
     default:
         respond(['error' => 'Unknown or missing action'], 400);
 }

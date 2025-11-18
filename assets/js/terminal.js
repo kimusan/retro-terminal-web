@@ -206,7 +206,7 @@ class RetroTerminal {
 
         const parts = trimmed.split(/\s+/);
         const first = parts[0];
-        const commands = ['help', 'ls', 'cd', 'pwd', 'cat', 'less', 'clear', 'man', 'uname', 'whoami', 'date', 'crt', 'banner'];
+        const commands = ['help', 'ls', 'cd', 'pwd', 'cat', 'less', 'clear', 'man', 'uname', 'whoami', 'date', 'crt', 'banner', 'figlet', 'find', 'locate'];
 
         if (parts.length === 1) {
             const matches = commands.filter(c => c.startsWith(first));
@@ -294,6 +294,15 @@ class RetroTerminal {
                 break;
             case 'crt':
                 result = this.cmdCrt(args);
+                break;
+            case 'figlet':
+                result = this.cmdFiglet(args);
+                break;
+            case 'find':
+                result = this.cmdFind(args);
+                break;
+            case 'locate':
+                result = this.cmdLocate(args);
                 break;
             default:
                 this.printLine(`${cmd}: command not found`, 'terminal-error');
@@ -460,6 +469,34 @@ class RetroTerminal {
         ].join('\n');
     }
 
+    getFindHelpText() {
+        return [
+            'Usage: find [PATH] PATTERN',
+            '',
+            'Search for files or directories starting at PATH (defaults to current directory).',
+            '',
+            'Examples:',
+            '  find projects resume',
+            '  find / images'
+        ].join('\n');
+    }
+
+    getLocateHelpText() {
+        return [
+            'Usage: locate TERM',
+            '',
+            'Search the entire content tree for TERM.'
+        ].join('\n');
+    }
+
+    getFigletHelpText() {
+        return [
+            'Usage: figlet [-f block|mini] text',
+            '',
+            'Render TEXT in ASCII art. Fonts supported: block (default), mini.'
+        ].join('\n');
+    }
+
     getHelpOverview() {
         return [
             'Available commands:',
@@ -475,6 +512,9 @@ class RetroTerminal {
             '  date          Display current date/time',
             '  banner        Show retro system info banner',
             '  crt [mode]    Toggle CRT visual filter',
+            '  figlet <text> Render ASCII art text',
+            '  find [p] pat  Search within current tree',
+            '  locate term   Search entire content tree',
             '  clear         Clear the screen',
             '',
             'Most commands support -h or --help for more info.'
@@ -835,6 +875,72 @@ class RetroTerminal {
         } else {
             this.printLine('crt: unsupported mode (use on/off/toggle/status)', 'terminal-error');
         }
+    }
+
+    cmdFiglet(args) {
+        if (args[0] === '-h' || args[0] === '--help') {
+            this.printLine(this.getFigletHelpText());
+            return;
+        }
+
+        let font = 'block';
+        const textParts = [];
+
+        for (let i = 0; i < args.length; i++) {
+            const arg = args[i];
+            if ((arg === '-f' || arg === '--font') && args[i + 1]) {
+                font = args[i + 1].toLowerCase();
+                i++;
+            } else {
+                textParts.push(arg);
+            }
+        }
+
+        const text = textParts.join(' ') || `${this.host}`;
+        const output = this.renderFiglet(text, font);
+        this.printLine(output, 'terminal-figlet');
+    }
+
+    cmdFind(args) {
+        if (args[0] === '-h' || args[0] === '--help') {
+            this.printLine(this.getFindHelpText());
+            return;
+        }
+
+        if (!args.length) {
+            this.printLine('find: missing pattern', 'terminal-error');
+            return;
+        }
+
+        let startPath = this.currentPath;
+        let patternArgs = args.slice();
+        if (args.length > 1) {
+            startPath = this.resolveVirtualPath(this.currentPath, args[0]);
+            patternArgs = args.slice(1);
+        }
+
+        const term = patternArgs.join(' ').trim() || '';
+        if (!term) {
+            this.printLine('find: missing pattern', 'terminal-error');
+            return;
+        }
+
+        return this.performSearch(startPath, term, 'find');
+    }
+
+    cmdLocate(args) {
+        if (args[0] === '-h' || args[0] === '--help') {
+            this.printLine(this.getLocateHelpText());
+            return;
+        }
+
+        if (!args.length) {
+            this.printLine('locate: missing search term', 'terminal-error');
+            return;
+        }
+
+        const term = args.join(' ').trim();
+        return this.performSearch('/', term, 'locate');
     }
 
     printLine(text = '', className = 'terminal-line') {
@@ -1322,6 +1428,129 @@ class RetroTerminal {
         }
     }
 
+    performSearch(startPath, term, commandName) {
+        const virtualStart = startPath || '/';
+        const url = `${this.apiBase}?action=search&path=${encodeURIComponent(virtualStart)}&term=${encodeURIComponent(term)}`;
+        return fetch(url)
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    this.printLine(`${commandName}: ${data.error}`, 'terminal-error');
+                    return;
+                }
+                const matches = Array.isArray(data.results) ? data.results : [];
+                if (!matches.length) {
+                    this.printLine(`${commandName}: no matches for "${term}"`);
+                    return;
+                }
+                matches.forEach(item => {
+                    const suffix = item.type === 'dir' ? '/' : '';
+                    this.printLine(`${item.path}${suffix}`);
+                });
+            })
+            .catch(err => {
+                console.error(err);
+                this.printLine(`${commandName}: search error`, 'terminal-error');
+            });
+    }
+
+    renderFiglet(text, fontChoice) {
+        const baseFont = this.getBaseFigletFont();
+        const upper = (text || '').toUpperCase();
+        const glyphs = [];
+        for (const ch of upper) {
+            const glyph = baseFont[ch] || baseFont['?'];
+            glyphs.push(this.buildFigletGlyph(glyph, fontChoice));
+        }
+        if (!glyphs.length) {
+            return '';
+        }
+        const height = glyphs[0].length;
+        const lines = Array.from({ length: height }, () => '');
+        glyphs.forEach(glyph => {
+            for (let i = 0; i < glyph.length; i++) {
+                lines[i] += glyph[i] + '  ';
+            }
+        });
+        return lines.join('\n');
+    }
+
+    buildFigletGlyph(baseGlyph, fontChoice) {
+        const font = fontChoice === 'mini' ? 'mini' : 'block';
+        if (font === 'mini') {
+            return baseGlyph.map(line => line.replace(/#/g, '█').replace(/\./g, ' '));
+        }
+        return this.scaleFigletGlyph(baseGlyph, 2, 2);
+    }
+
+    scaleFigletGlyph(lines, scaleX = 2, scaleY = 2) {
+        const scaled = [];
+        lines.forEach(line => {
+            let expanded = '';
+            for (const ch of line) {
+                const fill = ch === '#';
+                const symbol = fill ? '█' : ' ';
+                expanded += symbol.repeat(scaleX);
+            }
+            for (let i = 0; i < scaleY; i++) {
+                scaled.push(expanded);
+            }
+        });
+        return scaled;
+    }
+
+    getBaseFigletFont() {
+        if (this.baseFigletFont) {
+            return this.baseFigletFont;
+        }
+        const base = {
+            'A': ['..##..', '.#..#.', '#....#', '######', '#....#'],
+            'B': ['###...', '#..#..', '###...', '#..#..', '###...'],
+            'C': ['.####.', '#.....', '#.....', '#.....', '.####.'],
+            'D': ['###...', '#..#..', '#...#.', '#..#..', '###...'],
+            'E': ['#####.', '#.....', '#####.', '#.....', '#####.'],
+            'F': ['#####.', '#.....', '#####.', '#.....', '#.....'],
+            'G': ['.####.', '#.....', '#.###.', '#...#.', '.###..'],
+            'H': ['#....#', '#....#', '######', '#....#', '#....#'],
+            'I': ['.###..', '..#...', '..#...', '..#...', '.###..'],
+            'J': ['..###.', '...#..', '...#..', '#..#..', '.##...'],
+            'K': ['#...#.', '#..#..', '###...', '#..#..', '#...#.'],
+            'L': ['#.....', '#.....', '#.....', '#.....', '#####.'],
+            'M': ['#....#', '##..##', '#.##.#', '#....#', '#....#'],
+            'N': ['#....#', '##...#', '#.#..#', '#..#.#', '#...##'],
+            'O': ['.####.', '#....#', '#....#', '#....#', '.####.'],
+            'P': ['###...', '#..#..', '###...', '#.....', '#.....'],
+            'Q': ['.####.', '#....#', '#....#', '#..#.#', '.###.#'],
+            'R': ['###...', '#..#..', '###...', '#..#..', '#...#.'],
+            'S': ['.####.', '#.....', '.###..', '....#.', '####..'],
+            'T': ['######', '..#...', '..#...', '..#...', '..#...'],
+            'U': ['#....#', '#....#', '#....#', '#....#', '.####.'],
+            'V': ['#....#', '#....#', '#....#', '.#..#.', '..##..'],
+            'W': ['#....#', '#....#', '#.##.#', '##..##', '#....#'],
+            'X': ['#....#', '.#..#.', '..##..', '.#..#.', '#....#'],
+            'Y': ['#....#', '.#..#.', '..##..', '..##..', '..##..'],
+            'Z': ['######', '...#..', '..#...', '.#....', '######'],
+            '0': ['.####.', '#....#', '#..#.#', '#....#', '.####.'],
+            '1': ['..#...', '.##...', '..#...', '..#...', '.###..'],
+            '2': ['.####.', '#....#', '...##.', '..#...', '######'],
+            '3': ['#####.', '....#.', '..##..', '....#.', '#####.'],
+            '4': ['#...#.', '#...#.', '######', '....#.', '....#.'],
+            '5': ['######', '#.....', '#####.', '....#.', '#####.'],
+            '6': ['.####.', '#.....', '#####.', '#....#', '.####.'],
+            '7': ['######', '....#.', '...#..', '..#...', '..#...'],
+            '8': ['.####.', '#....#', '.####.', '#....#', '.####.'],
+            '9': ['.####.', '#....#', '.#####', '....#.', '.###..'],
+            ' ': ['......', '......', '......', '......', '......'],
+            '!': ['..#...', '..#...', '..#...', '......', '..#...'],
+            '?': ['.####.', '....#.', '..##..', '......', '..#...'],
+            '.': ['......', '......', '......', '......', '..#...'],
+            '-': ['......', '......', '.####.', '......', '......'],
+            '_': ['......', '......', '......', '......', '######']
+        };
+        this.baseFigletFont = base;
+        return base;
+    }
+
     applyCrtMode(enabled, skipSave = false) {
         this.crtEnabled = !!enabled;
         if (document.body) {
@@ -1361,7 +1590,10 @@ class RetroTerminal {
             whoami: this.wrapManPage('whoami', 'print current user name', this.getWhoamiHelpText()),
             date: this.wrapManPage('date', 'display current date and time', this.getDateHelpText()),
             banner: this.wrapManPage('banner', 'display retro system info', this.getBannerHelpText()),
-            crt: this.wrapManPage('crt', 'toggle CRT visual filter', this.getCrtHelpText())
+            crt: this.wrapManPage('crt', 'toggle CRT visual filter', this.getCrtHelpText()),
+            figlet: this.wrapManPage('figlet', 'render text in ASCII art', this.getFigletHelpText()),
+            find: this.wrapManPage('find', 'search within the current tree', this.getFindHelpText()),
+            locate: this.wrapManPage('locate', 'search the entire content tree', this.getLocateHelpText())
         };
     }
 
