@@ -33,8 +33,7 @@ Perfect for:
 * Responsive layout recalculates pager height + ASCII art width on resize
 * Toggleable CRT bloom/scanline filter via the `crt` command
 * Mobile-friendly keyboard helper so touch devices keep the software keyboard open
-* Configurable file-type whitelist + download list (exposed through the `get` command)
-* Faux utility commands (`banner`, `figlet`, `find`, `locate`, `grep`, `get`, etc.) for extra realism
+* Faux utility commands (`banner`, `figlet`, `find`, `locate`, etc.) for extra realism
 
 ### **📁 Filesystem-Driven Content**
 
@@ -70,10 +69,6 @@ Everything the user sees comes from the `content/` directory.
 ### **🖼 Image → ASCII Rendering**
 
 Image files (`png`, `jpg`, `gif`, `webp`) automatically render in the terminal as ANSI-colored ASCII art using PHP GD.
-
-### **📡 Telnet-Style Blog Plugin**
-
-Enable the `blog-bbs` plugin (see `config.php`) to unlock a faux dial-up `telnet` command. It dials into an ANSI BBS interface that lists markdown posts stored under `content/Blog/`, complete with customizable ANSI splash screens and an optional message board.
 
 ---
 
@@ -146,14 +141,12 @@ return [
   'default_theme' => 'classic', // or 'crt'
   'options' => [
       'enable_ansi_images' => true,
-      'max_output_lines'   => 200,
-      'allowed_extensions' => ['md', 'txt', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'],
-      'downloadable_extensions' => ['zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', '7z', 'iso', 'img', 'bin', 'appimage'],
+      'max_output_lines'   => 200
   ],
 ];
-
-Set `'default_theme' => 'crt'` to enable the CRT filter by default (visitors can still toggle it via the `crt` command). Adjust the extension lists to control which files show up in `ls`/`cat` versus which binaries are exposed through the `get` download command.
 ```
+
+Set `'default_theme' => 'crt'` to enable the CRT filter by default (visitors can still toggle it via the `crt` command).
 
 ### Changing terminal identity:
 

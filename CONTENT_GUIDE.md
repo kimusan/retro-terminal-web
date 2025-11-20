@@ -107,6 +107,28 @@ Markdown is displayed as plain text unless you want me to add inline formatting 
 
 ---
 
+## **📓 Blog Posts & the BBS**
+
+The optional telnet-style Blog BBS plugin reads markdown articles from `content/Blog/`. Each post can include front matter metadata (see `_POST_TEMPLATE.md` inside that folder):
+
+```markdown
+---
+title: Example Retro Story
+date: 2024-01-01
+summary: One sentence teaser for the LIST view.
+slug: example-retro-story
+---
+Body content goes here...
+```
+
+Guidelines:
+
+* Keep filenames TitleCase or kebab-case for easy reading inside the terminal.
+* Avoid underscores at the start of filenames—those are treated as templates (`_POST_TEMPLATE.md`) or ignored by the plugin.
+* The BBS renders everything in a fixed 66-column layout, so short paragraphs and manual line breaks read best.
+
+---
+
 ## **🖼 Adding Image Files**
 
 Images with extensions:
@@ -251,5 +273,4 @@ It must be readable by the PHP process.
 
 Your entire site content is now fully filesystem-driven:
 Just add, remove, and edit files under `/content/`, and the terminal automatically reflects it—no backend changes required.
-
 

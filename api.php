@@ -6,6 +6,7 @@
 header('Content-Type: application/json; charset=utf-8');
 
 $config = require __DIR__ . '/config.php';
+require_once __DIR__ . '/plugins/bootstrap.php';
 $options = $config['options'] ?? [];
 $allowedExtensions = array_map('strtolower', $options['allowed_extensions'] ?? []);
 $downloadableExtensions = array_map('strtolower', $options['downloadable_extensions'] ?? []);
@@ -20,6 +21,7 @@ $contentRoot = realpath($config['content_root'] ?? (__DIR__ . '/content'));
 if ($contentRoot === false) {
     respond(['error' => 'Content root not found.'], 500);
 }
+$pluginRegistry = RetroPluginRegistry::fromConfig($config, __DIR__, $contentRoot);
 
 function resolve_path(string $virtualPath, string $contentRoot): ?string
 {
@@ -166,7 +168,7 @@ function is_downloadable_extension(?string $ext, array $downloadable): bool {
     return in_array(strtolower($ext), $downloadable, true);
 }
 
-$action = $_GET['action'] ?? null;
+$action = $_GET['action'] ?? $_POST['action'] ?? null;
 
 switch ($action) {
     case 'list':
@@ -465,6 +467,32 @@ switch ($action) {
             'results' => $results,
             'names_only' => $namesOnly ? 1 : 0,
         ]);
+        break;
+
+    case 'plugins':
+        respond(['plugins' => $pluginRegistry->manifest()]);
+        break;
+
+    case 'plugin':
+        $pluginName = $_GET['plugin'] ?? $_POST['plugin'] ?? '';
+        if (!$pluginName) {
+            respond(['error' => 'Missing plugin identifier'], 400);
+        }
+        $plugin = $pluginRegistry->get($pluginName);
+        if (!$plugin) {
+            respond(['error' => 'Plugin not available'], 404);
+        }
+
+        $operation = $_GET['op'] ?? $_POST['op'] ?? 'command';
+        $params = $_REQUEST;
+        unset($params['action'], $params['plugin'], $params['op']);
+
+        try {
+            $result = $plugin->handle($operation, $params);
+            respond($result);
+        } catch (\Throwable $e) {
+            respond(['error' => 'Plugin error'], 500);
+        }
         break;
 
     case 'download':

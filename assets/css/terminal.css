@@ -123,6 +123,13 @@ body {
     font-family: inherit;
 }
 
+.terminal-bbs {
+    white-space: pre;
+    font-family: inherit;
+    max-width: 72ch;
+    color: #9f9;
+}
+
 .terminal-figlet {
     white-space: pre;
     font-weight: bold;

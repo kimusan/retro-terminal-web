@@ -28,6 +28,9 @@ class RetroTerminal {
         this.mobileKeyboardButton = null;
         this.hiddenInput = null;
         this.previousPath = '/';
+        this.defaultCommands = ['help', 'ls', 'cd', 'pwd', 'cat', 'less', 'clear', 'man', 'uname', 'whoami', 'date', 'crt', 'banner', 'figlet', 'find', 'locate', 'grep', 'get'];
+        this.pluginManifest = [];
+        this.activePluginSession = null;
 
         this.init();
     }
@@ -44,6 +47,7 @@ class RetroTerminal {
         this.restorePreferences();
         this.setupMobileKeyboardSupport();
         this.createHiddenInput();
+        this.bootstrapPlugins();
     }
 
     async runFakeSSHSequence() {
@@ -210,7 +214,7 @@ class RetroTerminal {
             parts.push('');
         }
         const first = parts[0];
-        const commands = ['help', 'ls', 'cd', 'pwd', 'cat', 'less', 'clear', 'man', 'uname', 'whoami', 'date', 'crt', 'banner', 'figlet', 'find', 'locate', 'grep', 'get'];
+        const commands = this.getCommandList();
 
         if (first === 'cd') {
             this.handleCdCompletion(parts.slice());
@@ -258,6 +262,16 @@ class RetroTerminal {
         this.currentInputEl = null;
         this.history.push(command);
         this.historyIndex = -1;
+
+        if (this.activePluginSession) {
+            const pluginResult = this.handlePluginSessionInput(command);
+            if (pluginResult && typeof pluginResult.then === 'function') {
+                pluginResult.finally(() => this.newPrompt());
+            } else {
+                this.newPrompt();
+            }
+            return;
+        }
 
         if (!command) {
             this.newPrompt();
@@ -322,6 +336,9 @@ class RetroTerminal {
                 break;
             case 'get':
                 result = this.cmdGet(args);
+                break;
+            case 'telnet':
+                result = this.cmdTelnet(args);
                 break;
             default:
                 this.printLine(`${cmd}: command not found`, 'terminal-error');
@@ -695,8 +712,55 @@ class RetroTerminal {
         ].join('\n');
     }
 
+    getTelnetHelpText() {
+        const nodes = [];
+        this.pluginManifest.forEach((plugin) => {
+            if (plugin && plugin.command === 'telnet') {
+                if (Array.isArray(plugin.aliases) && plugin.aliases.length) {
+                    nodes.push(plugin.aliases.join(', '));
+                } else if (plugin.title) {
+                    nodes.push(plugin.title);
+                }
+            }
+        });
+        const lines = [
+            'Usage: telnet [node]',
+            '',
+            'Dial into a configured ANSI-style plugin (e.g., the blog BBS).',
+            'While connected, commands such as LIST, READ, and HANGUP are',
+            'handled by the remote system.',
+            '',
+            'Type HANGUP, BYE, or EXIT to disconnect and return to the shell.',
+        ];
+        if (nodes.length) {
+            lines.push('', `Available nodes: ${nodes.join(' | ')}`);
+        }
+        return lines.join('\n');
+    }
+
+    getCommandList() {
+        const extra = [];
+        this.pluginManifest.forEach((plugin) => {
+            if (plugin && typeof plugin.command === 'string') {
+                extra.push(plugin.command);
+            }
+        });
+        return Array.from(new Set([...this.defaultCommands, ...extra]));
+    }
+
+    getPluginHelpLines() {
+        const lines = [];
+        this.pluginManifest.forEach((plugin) => {
+            if (!plugin || !plugin.command) return;
+            const usage = plugin.usage || plugin.command;
+            const desc = plugin.description ? `  ${plugin.description}` : '';
+            lines.push(`  ${usage}${desc}`);
+        });
+        return lines;
+    }
+
     getHelpOverview() {
-        return [
+        const lines = [
             'Available commands:',
             '  help          Show this help message',
             '  ls [-l] [dir] List directory contents',
@@ -716,9 +780,14 @@ class RetroTerminal {
             '  grep [-rl]    Search files for text',
             '  get <file>    Download permitted files',
             '  clear         Clear the screen',
-            '',
-            'Most commands support -h or --help for more info.'
-        ].join('\n');
+        ];
+        const pluginLines = this.getPluginHelpLines();
+        if (pluginLines.length) {
+            lines.push('', 'Plugin commands:');
+            pluginLines.forEach(line => lines.push(line));
+        }
+        lines.push('', 'Most commands support -h or --help for more info.');
+        return lines.join('\n');
     }
 
     cmdHelp() {
@@ -1240,6 +1309,157 @@ class RetroTerminal {
             });
     }
 
+    cmdTelnet(args) {
+        if (!this.isTelnetAvailable()) {
+            this.printLine('telnet: no dial-up services configured', 'terminal-error');
+            return;
+        }
+        if (this.activePluginSession) {
+            this.printLine('telnet: already connected (type HANGUP to exit)', 'terminal-error');
+            return;
+        }
+        const target = (args[0] || '').toLowerCase();
+        const plugin = this.resolveTelnetPlugin(target);
+        if (!plugin) {
+            this.printLine('telnet: unknown host (try telnet blog)', 'terminal-error');
+            return;
+        }
+        return this.startPluginSession(plugin);
+    }
+
+    resolveTelnetPlugin(target) {
+        const telnetPlugins = this.pluginManifest.filter(plugin => plugin && plugin.command === 'telnet');
+        if (!telnetPlugins.length) {
+            return null;
+        }
+        if (target) {
+            const match = telnetPlugins.find((plugin) => {
+                if (!Array.isArray(plugin.aliases)) return false;
+                return plugin.aliases.map(alias => String(alias || '').toLowerCase()).includes(target);
+            });
+            if (match) {
+                return match;
+            }
+        }
+        return telnetPlugins[0];
+    }
+
+    isTelnetAvailable() {
+        return this.pluginManifest.some(plugin => plugin && plugin.command === 'telnet');
+    }
+
+    startPluginSession(plugin) {
+        this.activePluginSession = { plugin };
+        const label = plugin.title || plugin.name || 'remote node';
+        this.printLine(`Trying ${label}...`);
+        return this.requestPlugin(plugin.name, 'handshake')
+            .then((data) => {
+                this.renderPluginResponse(data);
+                if (!data || data.error || data.hangup) {
+                    this.endPluginSession();
+                    return;
+                }
+                this.printLine('Connected. Type HANGUP to disconnect.', 'terminal-dim');
+            })
+            .catch((err) => {
+                console.error(err);
+                this.printLine('telnet: connection failed', 'terminal-error');
+                this.activePluginSession = null;
+            });
+    }
+
+    handlePluginSessionInput(command) {
+        if (!this.activePluginSession) {
+            return null;
+        }
+        const trimmed = (command || '').trim();
+        const payload = { input: trimmed };
+        return this.requestPlugin(this.activePluginSession.plugin.name, 'command', payload)
+            .then((data) => {
+                this.renderPluginResponse(data);
+                if (data && data.hangup) {
+                    this.endPluginSession();
+                }
+            })
+            .catch((err) => {
+                console.error(err);
+                this.printLine('telnet: link dropped', 'terminal-error');
+                this.endPluginSession();
+            });
+    }
+
+    endPluginSession(message) {
+        if (!this.activePluginSession) {
+            return;
+        }
+        if (message) {
+            this.printLine(message, 'terminal-dim');
+        }
+        this.activePluginSession = null;
+    }
+
+    requestPlugin(pluginName, operation, payload = {}) {
+        const body = new URLSearchParams();
+        body.set('action', 'plugin');
+        body.set('plugin', pluginName);
+        body.set('op', operation);
+        Object.keys(payload || {}).forEach((key) => {
+            const value = payload[key];
+            if (value !== undefined && value !== null) {
+                body.set(key, value);
+            }
+        });
+        return fetch(this.apiBase, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+            },
+            body: body.toString()
+        })
+            .then((res) => {
+                if (!res.ok) {
+                    throw new Error('Plugin request failed');
+                }
+                return res.json();
+            });
+    }
+
+    renderPluginResponse(payload) {
+        if (!payload) {
+            return;
+        }
+        if (payload.error) {
+            this.printLine(`telnet: ${payload.error}`, 'terminal-error');
+            if (this.activePluginSession) {
+                this.endPluginSession();
+            }
+            return;
+        }
+        const blockClass = payload.fixedWidth ? 'terminal-bbs' : 'terminal-line';
+        if (Array.isArray(payload.ansi)) {
+            payload.ansi.forEach((block) => {
+                if (block) {
+                    this.printAnsiArt(block);
+                }
+            });
+        }
+        if (Array.isArray(payload.blocks)) {
+            payload.blocks.forEach(block => this.printPluginBlock(block, blockClass));
+        }
+        if (Array.isArray(payload.lines)) {
+            payload.lines.forEach(line => this.printLine(line, blockClass));
+        } else if (typeof payload.lines === 'string') {
+            this.printPluginBlock(payload.lines, blockClass);
+        }
+    }
+
+    printPluginBlock(block, className) {
+        if (typeof block !== 'string') {
+            return;
+        }
+        block.split(/\r?\n/).forEach(line => this.printLine(line, className));
+    }
+
     printLine(text = '', className = 'terminal-line') {
         const lineEl = document.createElement('div');
         lineEl.className = `terminal-line ${className}`;
@@ -1716,6 +1936,22 @@ class RetroTerminal {
         this.hiddenInput = input;
     }
 
+    bootstrapPlugins() {
+        fetch(`${this.apiBase}?action=plugins`)
+            .then(res => res.json())
+            .then((data) => {
+                if (data && Array.isArray(data.plugins)) {
+                    this.pluginManifest = data.plugins;
+                    this.refreshManPages();
+                } else {
+                    this.pluginManifest = [];
+                }
+            })
+            .catch(() => {
+                this.pluginManifest = [];
+            });
+    }
+
     focusHiddenInput() {
         if (!this.hiddenInput) return;
         try {
@@ -1874,7 +2110,7 @@ class RetroTerminal {
     }
 
     getDefaultManPages() {
-        return {
+        const pages = {
             help: this.wrapManPage('help', 'display help for built-in commands', this.getHelpOverview()),
             ls: this.wrapManPage('ls', 'list directory contents', this.getLsHelpText()),
             cd: this.wrapManPage('cd', 'change directory', this.getCdHelpText()),
@@ -1894,6 +2130,10 @@ class RetroTerminal {
             grep: this.wrapManPage('grep', 'search file contents', this.getGrepHelpText()),
             get: this.wrapManPage('get', 'download allowed files', this.getGetHelpText())
         };
+        if (this.isTelnetAvailable()) {
+            pages.telnet = this.wrapManPage('telnet', 'dial retro plugin nodes', this.getTelnetHelpText());
+        }
+        return pages;
     }
 
     wrapManPage(name, description, body) {

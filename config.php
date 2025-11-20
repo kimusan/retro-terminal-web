@@ -36,4 +36,13 @@ return [
             'zip','tar','gz','tgz','bz2','xz','7z','rar','iso','img','bin','appimage'
         ],
     ],
+
+    // Optional terminal plugins.
+    'plugins' => [
+        'blog-bbs' => [
+            'enabled' => true,
+            'blog_root' => __DIR__ . '/content/Blog',
+            'allow_messages' => true,
+        ],
+    ],
 ];
