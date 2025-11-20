@@ -18,6 +18,8 @@ This plugin ships the ANSI-style blog reader that powers the `telnet` command. I
 
 `blog_root` can point to any folder containing `.md` posts. Files prefixed with `_` are ignored.
 
+The plugin registers the `telnet` command and advertises the dial targets listed under `nodes` inside `BlogBbsPlugin::manifest()`. Rename or add nodes there if you want custom prompts (e.g., `retro`, `bbs`, `news`).
+
 ## ANSI Artwork
 
 Custom artwork is stored under `plugins/blog-bbs/ansi/`:

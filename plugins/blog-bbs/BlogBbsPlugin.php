@@ -40,9 +40,16 @@ class BlogBbsPlugin implements RetroTerminalPlugin
             'name' => $this->getName(),
             'title' => 'Retro Blog BBS',
             'command' => 'telnet',
-            'aliases' => ['blog', 'bbs', 'news', 'retroblog'],
+            'aliases' => [],
             'usage' => 'telnet [blog]',
             'description' => 'Dial into the ANSI-powered blog reader.',
+            'help' => "Usage: telnet [blog]\n\nDial into the Retro Blog BBS and browse recent posts.\nUse the remote HANGUP command when you are done.",
+            'mode' => 'session',
+            'session' => [
+                'handshake' => 'handshake',
+                'command' => 'command',
+            ],
+            'nodes' => ['blog', 'bbs', 'news', 'retroblog'],
         ];
     }
 

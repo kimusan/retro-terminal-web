@@ -28,6 +28,23 @@ interface RetroTerminalPlugin {
 * `manifest()` must return metadata describing how the frontend can surface the plugin (e.g., `command`, `aliases`, `usage`, `description`).
 * `handle()` is invoked from `api.php?action=plugin` with `op` (operation) and arbitrary parameters. Plugins should return JSON-serializable arrays; common keys include `lines`, `blocks`, `ansi`, `fixedWidth`, and `hangup`.
 
+### Manifest Fields
+
+Recommended keys returned from `manifest()`:
+
+| Key          | Purpose                                                                                  |
+| ------------ | ---------------------------------------------------------------------------------------- |
+| `name`       | Unique identifier that matches the directory name                                        |
+| `command`    | Primary shell command trigger (e.g., `telnet`)                                           |
+| `aliases`    | Optional alternate command triggers                                                      |
+| `usage`      | One-line usage string displayed in `help` and `man`                                      |
+| `description`/`help` | Longer text displayed in `help` / man pages                                      |
+| `mode`       | Interaction mode. Use `'session'` for interactive flows or omit for one-shot commands.   |
+| `session`    | When `mode` is `session`, supply `handshake`/`command` operation names for the backend.   |
+| `nodes`      | Optional list of dial-in targets or sub-nodes shown in help output                       |
+
+Session plugins should implement at least two operations: a `handshake` (initial screen) and a `command` handler for subsequent input. Non-session plugins can expose a single `operation` name (defaults to `command`).
+
 ## Configuring Plugins
 
 Enable or disable plugins via `config.php`:

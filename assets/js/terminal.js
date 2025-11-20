@@ -30,6 +30,8 @@ class RetroTerminal {
         this.previousPath = '/';
         this.defaultCommands = ['help', 'ls', 'cd', 'pwd', 'cat', 'less', 'clear', 'man', 'uname', 'whoami', 'date', 'crt', 'banner', 'figlet', 'find', 'locate', 'grep', 'get'];
         this.pluginManifest = [];
+        this.pluginsByCommand = new Map();
+        this.pluginsByAlias = new Map();
         this.activePluginSession = null;
 
         this.init();
@@ -281,68 +283,70 @@ class RetroTerminal {
         const [cmd, ...args] = command.split(/\s+/);
 
         let result = null;
+        const plugin = this.resolvePluginCommand(cmd);
 
-        switch (cmd) {
-            case 'help':
-                result = this.cmdHelp();
-                break;
-            case 'clear':
-                result = this.cmdClear();
-                break;
-            case 'pwd':
-                result = this.cmdPwd();
-                break;
-            case 'ls':
-                result = this.cmdLs(args);
-                break;
-            case 'cd':
-                result = this.cmdCd(args);
-                break;
-            case 'cat':
-                result = this.cmdCat(args);
-                break;
-            case 'less':
-                result = this.cmdLess(args);
-                break;
-            case 'man':
-                result = this.cmdMan(args);
-                break;
-            case 'uname':
-                result = this.cmdUname(args);
-                break;
-            case 'whoami':
-                result = this.cmdWhoami(args);
-                break;
-            case 'date':
-                result = this.cmdDate(args);
-                break;
-            case 'banner':
-                result = this.cmdBanner(args);
-                break;
-            case 'crt':
-                result = this.cmdCrt(args);
-                break;
-            case 'figlet':
-                result = this.cmdFiglet(args);
-                break;
-            case 'find':
-                result = this.cmdFind(args);
-                break;
-            case 'locate':
-                result = this.cmdLocate(args);
-                break;
-            case 'grep':
-                result = this.cmdGrep(args);
-                break;
-            case 'get':
-                result = this.cmdGet(args);
-                break;
-            case 'telnet':
-                result = this.cmdTelnet(args);
-                break;
-            default:
-                this.printLine(`${cmd}: command not found`, 'terminal-error');
-                break;
+        if (plugin) {
+            result = this.executePluginCommand(plugin, args, cmd);
+        } else {
+            switch (cmd) {
+                case 'help':
+                    result = this.cmdHelp();
+                    break;
+                case 'clear':
+                    result = this.cmdClear();
+                    break;
+                case 'pwd':
+                    result = this.cmdPwd();
+                    break;
+                case 'ls':
+                    result = this.cmdLs(args);
+                    break;
+                case 'cd':
+                    result = this.cmdCd(args);
+                    break;
+                case 'cat':
+                    result = this.cmdCat(args);
+                    break;
+                case 'less':
+                    result = this.cmdLess(args);
+                    break;
+                case 'man':
+                    result = this.cmdMan(args);
+                    break;
+                case 'uname':
+                    result = this.cmdUname(args);
+                    break;
+                case 'whoami':
+                    result = this.cmdWhoami(args);
+                    break;
+                case 'date':
+                    result = this.cmdDate(args);
+                    break;
+                case 'banner':
+                    result = this.cmdBanner(args);
+                    break;
+                case 'crt':
+                    result = this.cmdCrt(args);
+                    break;
+                case 'figlet':
+                    result = this.cmdFiglet(args);
+                    break;
+                case 'find':
+                    result = this.cmdFind(args);
+                    break;
+                case 'locate':
+                    result = this.cmdLocate(args);
+                    break;
+                case 'grep':
+                    result = this.cmdGrep(args);
+                    break;
+                case 'get':
+                    result = this.cmdGet(args);
+                    break;
+                default:
+                    this.printLine(`${cmd}: command not found`, 'terminal-error');
+                    break;
+            }
         }
 
         if (result && typeof result.then === 'function') {
@@ -712,37 +716,22 @@ class RetroTerminal {
         ].join('\n');
     }
 
-    getTelnetHelpText() {
-        const nodes = [];
-        this.pluginManifest.forEach((plugin) => {
-            if (plugin && plugin.command === 'telnet') {
-                if (Array.isArray(plugin.aliases) && plugin.aliases.length) {
-                    nodes.push(plugin.aliases.join(', '));
-                } else if (plugin.title) {
-                    nodes.push(plugin.title);
-                }
-            }
-        });
-        const lines = [
-            'Usage: telnet [node]',
-            '',
-            'Dial into a configured ANSI-style plugin (e.g., the blog BBS).',
-            'While connected, commands such as LIST, READ, and HANGUP are',
-            'handled by the remote system.',
-            '',
-            'Type HANGUP, BYE, or EXIT to disconnect and return to the shell.',
-        ];
-        if (nodes.length) {
-            lines.push('', `Available nodes: ${nodes.join(' | ')}`);
-        }
-        return lines.join('\n');
+    getSafePluginManifest() {
+        return Array.isArray(this.pluginManifest) ? this.pluginManifest : [];
     }
 
     getCommandList() {
         const extra = [];
-        this.pluginManifest.forEach((plugin) => {
+        this.getSafePluginManifest().forEach((plugin) => {
             if (plugin && typeof plugin.command === 'string') {
                 extra.push(plugin.command);
+            }
+            if (plugin && Array.isArray(plugin.aliases)) {
+                plugin.aliases.forEach((alias) => {
+                    if (alias) {
+                        extra.push(alias);
+                    }
+                });
             }
         });
         return Array.from(new Set([...this.defaultCommands, ...extra]));
@@ -750,11 +739,14 @@ class RetroTerminal {
 
     getPluginHelpLines() {
         const lines = [];
-        this.pluginManifest.forEach((plugin) => {
+        this.getSafePluginManifest().forEach((plugin) => {
             if (!plugin || !plugin.command) return;
             const usage = plugin.usage || plugin.command;
             const desc = plugin.description ? `  ${plugin.description}` : '';
             lines.push(`  ${usage}${desc}`);
+            if (Array.isArray(plugin.nodes) && plugin.nodes.length) {
+                lines.push(`    Nodes: ${plugin.nodes.join(', ')}`);
+            }
         });
         return lines;
     }
@@ -1309,61 +1301,52 @@ class RetroTerminal {
             });
     }
 
-    cmdTelnet(args) {
-        if (!this.isTelnetAvailable()) {
-            this.printLine('telnet: no dial-up services configured', 'terminal-error');
-            return;
-        }
-        if (this.activePluginSession) {
-            this.printLine('telnet: already connected (type HANGUP to exit)', 'terminal-error');
-            return;
-        }
-        const target = (args[0] || '').toLowerCase();
-        const plugin = this.resolveTelnetPlugin(target);
-        if (!plugin) {
-            this.printLine('telnet: unknown host (try telnet blog)', 'terminal-error');
-            return;
-        }
-        return this.startPluginSession(plugin);
-    }
-
-    resolveTelnetPlugin(target) {
-        const telnetPlugins = this.pluginManifest.filter(plugin => plugin && plugin.command === 'telnet');
-        if (!telnetPlugins.length) {
-            return null;
-        }
-        if (target) {
-            const match = telnetPlugins.find((plugin) => {
-                if (!Array.isArray(plugin.aliases)) return false;
-                return plugin.aliases.map(alias => String(alias || '').toLowerCase()).includes(target);
-            });
-            if (match) {
-                return match;
+    executePluginCommand(plugin, args, invokedAs) {
+        const mode = (plugin && plugin.mode) || 'command';
+        if (mode === 'session') {
+            if (this.activePluginSession) {
+                this.printLine('plugin: another session is already active (follow the remote hangup instructions to exit)', 'terminal-error');
+                return null;
             }
+            return this.startPluginSession(plugin, args);
         }
-        return telnetPlugins[0];
+        return this.runPluginCommand(plugin, args, invokedAs);
     }
 
-    isTelnetAvailable() {
-        return this.pluginManifest.some(plugin => plugin && plugin.command === 'telnet');
-    }
-
-    startPluginSession(plugin) {
-        this.activePluginSession = { plugin };
-        const label = plugin.title || plugin.name || 'remote node';
-        this.printLine(`Trying ${label}...`);
-        return this.requestPlugin(plugin.name, 'handshake')
+    runPluginCommand(plugin, args, invokedAs) {
+        const op = (plugin && plugin.operation) || 'command';
+        const payload = { input: args.join(' ') };
+        return this.requestPlugin(plugin.name, op, payload)
             .then((data) => {
-                this.renderPluginResponse(data);
+                this.renderPluginResponse(data, plugin);
+            })
+            .catch((err) => {
+                console.error(err);
+                this.printLine(`${invokedAs || plugin.command || 'plugin'}: unable to reach plugin`, 'terminal-error');
+            });
+    }
+
+    startPluginSession(plugin, args) {
+        this.activePluginSession = {
+            plugin,
+            session: plugin.session || {}
+        };
+        const label = plugin.title || plugin.command || plugin.name || 'remote node';
+        this.printLine(`Connecting to ${label}...`);
+        const handshakeOp = (plugin.session && plugin.session.handshake) || 'handshake';
+        const payload = { input: args.join(' ') };
+        return this.requestPlugin(plugin.name, handshakeOp, payload)
+            .then((data) => {
+                this.renderPluginResponse(data, plugin);
                 if (!data || data.error || data.hangup) {
                     this.endPluginSession();
                     return;
                 }
-                this.printLine('Connected. Type HANGUP to disconnect.', 'terminal-dim');
+                this.printLine('Connected to remote plugin. Follow its prompts to disconnect.', 'terminal-dim');
             })
             .catch((err) => {
                 console.error(err);
-                this.printLine('telnet: connection failed', 'terminal-error');
+                this.printLine(`${plugin.command || plugin.name || 'plugin'}: connection failed`, 'terminal-error');
                 this.activePluginSession = null;
             });
     }
@@ -1373,17 +1356,19 @@ class RetroTerminal {
             return null;
         }
         const trimmed = (command || '').trim();
+        const { plugin, session } = this.activePluginSession;
+        const commandOp = (session && session.command) || 'command';
         const payload = { input: trimmed };
-        return this.requestPlugin(this.activePluginSession.plugin.name, 'command', payload)
+        return this.requestPlugin(plugin.name, commandOp, payload)
             .then((data) => {
-                this.renderPluginResponse(data);
+                this.renderPluginResponse(data, plugin);
                 if (data && data.hangup) {
                     this.endPluginSession();
                 }
             })
             .catch((err) => {
                 console.error(err);
-                this.printLine('telnet: link dropped', 'terminal-error');
+                this.printLine(`${plugin.command || plugin.name || 'plugin'}: link dropped`, 'terminal-error');
                 this.endPluginSession();
             });
     }
@@ -1424,12 +1409,13 @@ class RetroTerminal {
             });
     }
 
-    renderPluginResponse(payload) {
+    renderPluginResponse(payload, plugin) {
         if (!payload) {
             return;
         }
+        const prefix = (plugin && (plugin.command || plugin.name)) || 'plugin';
         if (payload.error) {
-            this.printLine(`telnet: ${payload.error}`, 'terminal-error');
+            this.printLine(`${prefix}: ${payload.error}`, 'terminal-error');
             if (this.activePluginSession) {
                 this.endPluginSession();
             }
@@ -1942,14 +1928,45 @@ class RetroTerminal {
             .then((data) => {
                 if (data && Array.isArray(data.plugins)) {
                     this.pluginManifest = data.plugins;
-                    this.refreshManPages();
                 } else {
                     this.pluginManifest = [];
                 }
+                this.buildPluginIndices();
+                this.refreshManPages();
             })
             .catch(() => {
                 this.pluginManifest = [];
+                this.buildPluginIndices();
             });
+    }
+
+    buildPluginIndices() {
+        this.pluginsByCommand = new Map();
+        this.pluginsByAlias = new Map();
+        this.getSafePluginManifest().forEach((plugin) => {
+            if (!plugin || !plugin.name) return;
+            if (plugin.command) {
+                this.pluginsByCommand.set(plugin.command, plugin);
+            }
+            if (Array.isArray(plugin.aliases)) {
+                plugin.aliases.forEach((alias) => {
+                    if (alias) {
+                        this.pluginsByAlias.set(alias, plugin);
+                    }
+                });
+            }
+        });
+    }
+
+    resolvePluginCommand(cmd) {
+        if (!cmd) return null;
+        if (this.pluginsByCommand.has(cmd)) {
+            return this.pluginsByCommand.get(cmd);
+        }
+        if (this.pluginsByAlias.has(cmd)) {
+            return this.pluginsByAlias.get(cmd);
+        }
+        return null;
     }
 
     focusHiddenInput() {
@@ -2130,10 +2147,36 @@ class RetroTerminal {
             grep: this.wrapManPage('grep', 'search file contents', this.getGrepHelpText()),
             get: this.wrapManPage('get', 'download allowed files', this.getGetHelpText())
         };
-        if (this.isTelnetAvailable()) {
-            pages.telnet = this.wrapManPage('telnet', 'dial retro plugin nodes', this.getTelnetHelpText());
-        }
+        this.getSafePluginManifest().forEach((plugin) => {
+            if (!plugin || !plugin.command) return;
+            const summary = plugin.description || plugin.title || 'plugin command';
+            const body = plugin.help || this.buildPluginHelpBody(plugin);
+            pages[plugin.command] = this.wrapManPage(plugin.command, summary, body);
+        });
         return pages;
+    }
+
+    buildPluginHelpBody(plugin) {
+        const lines = [];
+        if (plugin.usage) {
+            lines.push(plugin.usage);
+        }
+        if (plugin.description) {
+            if (lines.length) lines.push('');
+            lines.push(plugin.description);
+        }
+        if (Array.isArray(plugin.nodes) && plugin.nodes.length) {
+            if (lines.length) lines.push('');
+            lines.push(`Available nodes: ${plugin.nodes.join(', ')}`);
+        }
+        if ((plugin.mode || 'command') === 'session') {
+            if (lines.length) lines.push('');
+            lines.push('Opens an interactive remote session. Follow the remote system prompts and use its hangup command to disconnect.');
+        }
+        if (!lines.length) {
+            lines.push('Refer to plugin documentation for usage details.');
+        }
+        return lines.join('\n');
     }
 
     wrapManPage(name, description, body) {
