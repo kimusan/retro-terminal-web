@@ -8,6 +8,8 @@ class BlogBbsPlugin implements RetroTerminalPlugin
     private string $blogDirectory;
     private string $ansiDirectory;
     private string $messageStore;
+    private string $nodeName;
+    private bool $messagesWritable;
 
     private const BOX_WIDTH = 66;
 
@@ -19,7 +21,12 @@ class BlogBbsPlugin implements RetroTerminalPlugin
         $this->blogDirectory = $config['blog_root'] ?? ($this->contentRoot . DIRECTORY_SEPARATOR . 'Blog');
         $this->ansiDirectory = $this->pluginRoot . DIRECTORY_SEPARATOR . 'ansi';
         $this->messageStore = $this->pluginRoot . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'messages.json';
+        $this->nodeName = strtoupper($config['node_name'] ?? 'RETRO BLOG BBS');
+        $this->messagesWritable = $this->initializeMessageStore();
+    }
 
+    private function initializeMessageStore(): bool
+    {
         $dataDir = dirname($this->messageStore);
         if (!is_dir($dataDir)) {
             @mkdir($dataDir, 0775, true);
@@ -27,11 +34,17 @@ class BlogBbsPlugin implements RetroTerminalPlugin
         if (!is_file($this->messageStore)) {
             @file_put_contents($this->messageStore, json_encode([], JSON_PRETTY_PRINT));
         }
+        return is_writable($this->messageStore);
     }
 
     public function getName(): string
     {
         return $this->config['name'] ?? 'blog-bbs';
+    }
+
+    private function getNodeName(): string
+    {
+        return $this->nodeName;
     }
 
     public function manifest(): array
@@ -48,6 +61,8 @@ class BlogBbsPlugin implements RetroTerminalPlugin
             'session' => [
                 'handshake' => 'handshake',
                 'command' => 'command',
+                'prompt_template' => '%HANDLE%@%NODE%> ',
+                'node' => $this->getNodeName(),
             ],
             'nodes' => ['blog', 'bbs', 'news', 'retroblog'],
         ];
@@ -55,24 +70,118 @@ class BlogBbsPlugin implements RetroTerminalPlugin
 
     public function handle(string $operation, array $params = []): array
     {
+        $handle = $this->normalizeHandle($params['handle'] ?? null);
+
         switch ($operation) {
             case 'handshake':
                 return $this->buildHandshakeResponse();
             case 'command':
-                return $this->handleCommand($params['input'] ?? '');
+                return $this->handleCommand($params['input'] ?? '', $handle);
             case 'list':
-                return $this->formatPostList();
+                return $this->wrapWithLayout([$this->buildPostListBlock()], ['handle' => $handle]);
             case 'read':
-                return $this->formatSinglePost($params['slug'] ?? $params['id'] ?? '');
+                return $this->wrapWithLayout([$this->buildSinglePostBlock($params['slug'] ?? $params['id'] ?? '')], ['handle' => $handle]);
             case 'messages':
-                return $this->formatMessages();
+                return $this->wrapWithLayout([$this->buildMessagesBlock()], ['handle' => $handle]);
             case 'leave':
-                return $this->handleLeaveMessage($params['handle'] ?? '', $params['message'] ?? '');
+                return $this->handleLeaveCommand($params['message'] ?? '', $handle);
             default:
                 return [
                     'error' => 'Unsupported plugin operation.',
                 ];
         }
+    }
+
+    private function wrapWithLayout(array $contentBlocks, array $options = []): array
+    {
+        $handle = $options['handle'] ?? null;
+        $blocks = array_merge(
+            [$this->renderStatusFrame($handle)],
+            [$this->buildMenuBlock()],
+            array_values(array_filter($contentBlocks))
+        );
+
+        $response = [
+            'clear' => $options['clear'] ?? true,
+            'fixedWidth' => true,
+            'blocks' => $blocks,
+            'node' => $this->getNodeName(),
+        ];
+
+        if (!empty($options['ansi'])) {
+            $response['ansi'] = $options['ansi'];
+        }
+        if (!empty($options['lines'])) {
+            $response['lines'] = $options['lines'];
+        }
+        if (!empty($options['requestHandle'])) {
+            $response['requestHandle'] = true;
+            if (!empty($options['handlePrompt'])) {
+                $response['handlePrompt'] = $options['handlePrompt'];
+            }
+        }
+        if (!empty($options['hangup'])) {
+            $response['hangup'] = true;
+        }
+
+        return $response;
+    }
+
+    private function renderStatusFrame(?string $handle = null): string
+    {
+        $lines = [];
+        $lines[] = $this->boxBorder('top');
+        $lines[] = $this->formatBoxLine($this->getNodeName(), true);
+        $lines[] = $this->boxBorder('divider');
+        $lines[] = $this->wrapBoxLine('SYSOP: kimusan');
+        $lines[] = $this->wrapBoxLine(sprintf('NODE : %s', $this->getNodeName()));
+        $lines[] = $this->wrapBoxLine(sprintf('USER : %s', $handle ? strtoupper($handle) : 'LOGIN REQUIRED'));
+        if (!$this->messagesWritable) {
+            $lines[] = $this->boxBorder('divider');
+            $lines[] = $this->wrapBoxLine('NOTICE: Message board is read-only.');
+        }
+        $lines[] = $this->boxBorder('bottom');
+        return implode("\n", $lines);
+    }
+
+    private function buildMenuBlock(): string
+    {
+        $entries = [
+            'LIST / POSTS    Review recent stories',
+            'READ <id|slug>  Open a specific entry',
+            'LATEST          Jump to the newest entry',
+            'MESSAGES        View lobby messages',
+            'LEAVE [@h] msg  Post a short note',
+            'MENU            Reprint this screen',
+            'HANGUP          Disconnect from the BBS',
+        ];
+
+        return $this->buildPanel('MAIN MENU', $entries);
+    }
+
+    private function buildIntroBlock(?string $handle = null): string
+    {
+        $body = [
+            'Welcome to the Retro Blog BBS.',
+            'Type a command from the menu to explore posts.',
+            'Enter HANGUP at any time to drop the call.'
+        ];
+        return $this->buildPanel('SESSION INFO', $body);
+    }
+
+    private function buildPanel(string $title, array $bodyLines): string
+    {
+        $lines = [];
+        $lines[] = $this->boxBorder('top');
+        $lines[] = $this->formatBoxLine($title, true);
+        if (!empty($bodyLines)) {
+            $lines[] = $this->boxBorder('divider');
+            foreach ($bodyLines as $line) {
+                $lines[] = $this->wrapBoxLine($line);
+            }
+        }
+        $lines[] = $this->boxBorder('bottom');
+        return implode("\n", $lines);
     }
 
     private function buildHandshakeResponse(): array
@@ -83,29 +192,29 @@ class BlogBbsPlugin implements RetroTerminalPlugin
         ]));
 
         $lines = [
-            'Establishing carrier on 2400 baud link...',
-            'Connected! Authenticating as guest...',
-            '',
-            'Welcome to RETRO BLOG BBS. Commands: LIST, READ <id|slug>, LATEST,',
-            'MESSAGES, LEAVE <handle> <message>, MENU, HANGUP.',
+            'Connection established. Please enter your handle to continue.',
         ];
+        if (!$this->messagesWritable) {
+            $lines[] = 'NOTE: Message board is currently read-only.';
+        }
 
-        return [
-            'ansi' => $ansi,
-            'blocks' => [$this->buildMenuBlock()],
-            'lines' => $lines,
-            'fixedWidth' => true,
-        ];
+        return $this->wrapWithLayout(
+            [$this->buildIntroBlock(null)],
+            [
+                'ansi' => $ansi,
+                'lines' => $lines,
+                'requestHandle' => true,
+                'handlePrompt' => 'Enter your handle:',
+                'handle' => null,
+            ]
+        );
     }
 
-    private function handleCommand(string $rawInput): array
+    private function handleCommand(string $rawInput, string $handle): array
     {
         $input = trim($rawInput);
         if ($input === '') {
-            return [
-                'blocks' => [$this->buildMenuBlock()],
-                'fixedWidth' => true,
-            ];
+            return $this->wrapWithLayout([$this->buildIntroBlock($handle)], ['handle' => $handle]);
         }
 
         $parts = preg_split('/\s+/', $input, 2);
@@ -115,173 +224,191 @@ class BlogBbsPlugin implements RetroTerminalPlugin
         switch ($verb) {
             case 'HELP':
             case 'MENU':
-                return [
-                    'blocks' => [$this->buildMenuBlock()],
-                    'fixedWidth' => true,
-                ];
+                return $this->wrapWithLayout([$this->buildIntroBlock($handle)], ['handle' => $handle]);
+
             case 'LIST':
             case 'POSTS':
-                return $this->formatPostList();
+                return $this->wrapWithLayout([$this->buildPostListBlock()], ['handle' => $handle]);
+
             case 'READ':
             case 'OPEN':
-                return $this->formatSinglePost($argument);
+                if ($argument === '') {
+                    return $this->wrapWithLayout([], [
+                        'handle' => $handle,
+                        'lines' => ['Usage: READ <id|slug>'],
+                    ]);
+                }
+                return $this->wrapWithLayout([$this->buildSinglePostBlock($argument)], ['handle' => $handle]);
+
             case 'LATEST':
-                return $this->formatSinglePost('1');
+                return $this->wrapWithLayout([$this->buildSinglePostBlock('1')], ['handle' => $handle]);
+
             case 'MSGS':
             case 'MESSAGES':
-                return $this->formatMessages();
+                return $this->wrapWithLayout([$this->buildMessagesBlock()], ['handle' => $handle]);
+
             case 'LEAVE':
             case 'MSG':
-                return $this->leaveFromArgument($argument);
+                return $this->handleLeaveCommand($argument, $handle);
+
             case 'HANGUP':
             case 'BYE':
             case 'EXIT':
                 return [
+                    'clear' => true,
                     'lines' => ['Carrier lost. Returning to shell...'],
                     'hangup' => true,
                 ];
+
             default:
-                return [
+                return $this->wrapWithLayout([], [
+                    'handle' => $handle,
                     'lines' => [
                         sprintf('Unknown command "%s". Type MENU for available options.', $verb ?: '?')
                     ],
-                    'fixedWidth' => true,
-                ];
+                ]);
         }
     }
 
-    private function formatPostList(): array
+    private function buildPostListBlock(): string
     {
         $posts = $this->loadPosts();
         if (!$posts) {
-            return [
-                'lines' => [
-                    'No blog posts were found in content/Blog.',
-                    'Create markdown files or copy the provided template to get started.',
-                ],
-                'fixedWidth' => true,
-            ];
+            return $this->buildPanel('RETRO BLOG WIRE', [
+                'No blog posts were found in content/Blog.',
+                'Copy `_POST_TEMPLATE.md` to start publishing.',
+            ]);
         }
 
-        $header = $this->formatBoxLine('RETRO BLOG WIRE', true);
-        $divider = $this->boxDivider();
-        $lines = [$this->boxBorder(), $header, $divider];
+        $lines = [
+            'Use READ <ID> or READ <slug> to open a post.',
+            '',
+        ];
 
         $max = min(count($posts), 9);
         for ($i = 0; $i < $max; $i++) {
             $post = $posts[$i];
-            $prefix = sprintf('%02d %s', $i + 1, $post['date']);
-            $titleLine = $this->wrapBoxLine($prefix . '  ' . $post['title']);
-            $summaryLine = $this->wrapBoxLine('    ' . $post['summary']);
-            $lines[] = $titleLine;
+            $lines[] = sprintf('%02d [%s] %s', $i + 1, $post['date'], $post['title']);
             if ($post['summary']) {
-                $lines[] = $summaryLine;
+                $summaryLines = $this->wrapText($post['summary'], self::BOX_WIDTH - 7);
+                foreach ($summaryLines as $summaryLine) {
+                    $lines[] = '     ' . $summaryLine;
+                }
             }
-            $lines[] = $divider;
+            $lines[] = '';
         }
-        $lines[] = $this->wrapBoxLine('Use READ <ID> or READ <slug> to open a story.');
-        $lines[] = $this->boxBorder();
 
-        return [
-            'lines' => $lines,
-            'fixedWidth' => true,
-        ];
+        return $this->buildPanel('RETRO BLOG WIRE', $lines);
     }
 
-    private function formatSinglePost(string $selector): array
+    private function buildSinglePostBlock(string $selector): string
     {
-        $selector = trim($selector);
-        if ($selector === '') {
-            return [
-                'lines' => ['Usage: READ <id|slug>'],
-                'fixedWidth' => true,
-            ];
-        }
-
         $post = $this->findPost($selector);
         if (!$post) {
-            return [
-                'lines' => [sprintf('Unable to locate a post matching "%s".', $selector)],
-                'fixedWidth' => true,
-            ];
+            return $this->buildPanel('STORY LOOKUP', [
+                sprintf('Unable to locate a post matching "%s".', $selector ?: '?'),
+            ]);
         }
 
-        $lines = [$this->boxBorder()];
-        $lines[] = $this->formatBoxLine(strtoupper($post['title']), true);
-        $lines[] = $this->wrapBoxLine(sprintf('%s // %s', $post['date'], $post['slug']));
-        $lines[] = $this->boxDivider();
-
-        $bodyLines = $this->wrapText($post['body'], self::BOX_WIDTH - 4);
-        foreach ($bodyLines as $bodyLine) {
-            $lines[] = $this->wrapBoxLine($bodyLine);
-        }
-
-        $lines[] = $this->boxBorder();
-
-        return [
-            'lines' => $lines,
-            'fixedWidth' => true,
+        $bodyLines = [
+            sprintf('%s // %s', $post['date'], $post['slug']),
+            '',
         ];
+
+        $bodyLines = array_merge($bodyLines, $this->wrapText($post['body'], self::BOX_WIDTH - 4));
+
+        return $this->buildPanel(strtoupper($post['title']), $bodyLines);
     }
 
-    private function formatMessages(): array
+    private function buildMessagesBlock(): string
     {
         $messages = $this->getMessages();
         if (!$messages) {
-            return [
-                'lines' => [
-                    'No messages on the board yet.',
-                    'Use LEAVE <handle> <message> to post a short note.',
-                ],
-                'fixedWidth' => true,
-            ];
+            return $this->buildPanel('LOBBY MESSAGES', [
+                'No one has left a note yet.',
+                'Type LEAVE <message> to drop a quick line.',
+            ]);
         }
 
-        $lines = [$this->boxBorder(), $this->formatBoxLine('LOBBY MESSAGES', true), $this->boxDivider()];
-
+        $display = [];
         $messages = array_reverse($messages);
-
         foreach ($messages as $message) {
             $stamp = date('M d H:i', $message['ts']);
-            $header = sprintf('%s :: %s', strtoupper($message['handle']), $stamp);
-            $lines[] = $this->wrapBoxLine($header);
-            $wrappedMessage = $this->wrapText($message['message'], self::BOX_WIDTH - 4);
-            foreach ($wrappedMessage as $msgLine) {
-                $lines[] = $this->wrapBoxLine('  ' . $msgLine);
+            $display[] = sprintf('%s :: %s', strtoupper($message['handle']), $stamp);
+            $wrapped = $this->wrapText($message['message'], self::BOX_WIDTH - 6);
+            foreach ($wrapped as $line) {
+                $display[] = '  ' . $line;
             }
-            $lines[] = $this->boxDivider();
+            $display[] = '';
         }
 
-        $lines[] = $this->boxBorder();
+        if (!$this->messagesWritable) {
+            $display[] = 'Message board is currently read-only.';
+        }
 
-        return [
-            'lines' => $lines,
-            'fixedWidth' => true,
-        ];
+        return $this->buildPanel('LOBBY MESSAGES', $display);
     }
 
-    private function handleLeaveMessage(string $handle, string $message): array
+    private function handleLeaveCommand(string $argument, string $sessionHandle): array
     {
         if (empty($this->config['allow_messages'])) {
-            return [
+            return $this->wrapWithLayout([], [
+                'handle' => $sessionHandle,
                 'lines' => ['Message posting is disabled on this system.'],
-                'fixedWidth' => true,
-            ];
+            ]);
+        }
+        if (!$this->messagesWritable) {
+            return $this->wrapWithLayout([], [
+                'handle' => $sessionHandle,
+                'lines' => ['Message board storage is read-only on this node.'],
+            ]);
         }
 
+        $argument = trim($argument);
+        if ($argument === '') {
+            return $this->wrapWithLayout([], [
+                'handle' => $sessionHandle,
+                'lines' => ['Usage: LEAVE <message> or LEAVE <handle> <message>'],
+            ]);
+        }
+
+        [$handle, $message] = $this->extractHandleAndMessage($argument, $sessionHandle);
         $handle = $this->sanitizeHandle($handle);
         $message = $this->sanitizeMessage($message);
 
-        if ($handle === '' || $message === '') {
-            return [
-                'lines' => ['Usage: LEAVE <handle> <short message>'],
-                'fixedWidth' => true,
-            ];
+        if ($message === '') {
+            return $this->wrapWithLayout([], [
+                'handle' => $sessionHandle,
+                'lines' => ['Message cannot be empty.'],
+            ]);
         }
 
+        if (!$this->saveMessageEntry($handle, $message)) {
+            return $this->wrapWithLayout([], [
+                'handle' => $sessionHandle,
+                'lines' => ['Unable to write message to storage.'],
+            ]);
+        }
+
+        return $this->wrapWithLayout([], [
+            'handle' => $sessionHandle,
+            'lines' => ['Message saved to lobby. Use MESSAGES to review.'],
+        ]);
+    }
+
+    private function extractHandleAndMessage(string $argument, string $sessionHandle): array
+    {
+        if (preg_match('/^@([A-Za-z0-9_\-]{1,12})\s+(.+)$/', $argument, $match)) {
+            return [$match[1], $match[2]];
+        }
+        return [$sessionHandle, $argument];
+    }
+
+    private function saveMessageEntry(string $handle, string $message): bool
+    {
         $messages = $this->getMessages();
         $messages[] = [
-            'handle' => $handle,
+            'handle' => strtoupper($handle),
             'message' => $message,
             'ts' => time(),
         ];
@@ -290,28 +417,12 @@ class BlogBbsPlugin implements RetroTerminalPlugin
             $messages = array_slice($messages, -25);
         }
 
-        @file_put_contents($this->messageStore, json_encode($messages, JSON_PRETTY_PRINT));
-
-        return [
-            'lines' => ['Message saved to lobby. Use MESSAGES to review.'],
-            'fixedWidth' => true,
-        ];
-    }
-
-    private function leaveFromArgument(string $argument): array
-    {
-        $argument = trim($argument);
-        if ($argument === '') {
-            return [
-                'lines' => ['Usage: LEAVE <handle> <message>'],
-                'fixedWidth' => true,
-            ];
+        $result = @file_put_contents($this->messageStore, json_encode($messages, JSON_PRETTY_PRINT));
+        if ($result === false) {
+            $this->messagesWritable = false;
+            return false;
         }
-
-        $parts = preg_split('/\s+/', $argument, 2);
-        $handle = $parts[0] ?? '';
-        $message = $parts[1] ?? '';
-        return $this->handleLeaveMessage($handle, $message);
+        return true;
     }
 
     private function findPost(string $selector): ?array
@@ -467,24 +578,6 @@ class BlogBbsPlugin implements RetroTerminalPlugin
         return $value;
     }
 
-    private function buildMenuBlock(): string
-    {
-        $lines = [
-            $this->boxBorder(),
-            $this->formatBoxLine('RETRO BLOG BBS :: MAIN MENU', true),
-            $this->boxDivider(),
-            $this->wrapBoxLine('LIST            Review recent posts'),
-            $this->wrapBoxLine('READ <id|slug>  Read a specific entry'),
-            $this->wrapBoxLine('LATEST          Jump to the most recent post'),
-            $this->wrapBoxLine('MESSAGES        View lobby messages'),
-            $this->wrapBoxLine('LEAVE handle msg Leave a short message'),
-            $this->wrapBoxLine('MENU            Redisplay this screen'),
-            $this->wrapBoxLine('HANGUP          Disconnect and return to shell'),
-            $this->boxBorder(),
-        ];
-        return implode("\n", $lines);
-    }
-
     private function loadAnsiArt(string $name): ?string
     {
         $path = $this->ansiDirectory . DIRECTORY_SEPARATOR . $name . '.ans';
@@ -494,14 +587,22 @@ class BlogBbsPlugin implements RetroTerminalPlugin
         return @file_get_contents($path) ?: null;
     }
 
-    private function boxBorder(): string
+    private function boxBorder(string $type = 'top'): string
     {
-        return '+' . str_repeat('-', self::BOX_WIDTH - 2) . '+';
+        $line = str_repeat('─', self::BOX_WIDTH - 2);
+        switch ($type) {
+            case 'bottom':
+                return '└' . $line . '┘';
+            case 'divider':
+                return '├' . $line . '┤';
+            default:
+                return '┌' . $line . '┐';
+        }
     }
 
     private function boxDivider(): string
     {
-        return '|' . str_repeat('-', self::BOX_WIDTH - 2) . '|';
+        return $this->boxBorder('divider');
     }
 
     private function formatBoxLine(string $text, bool $center = false): string
@@ -516,15 +617,19 @@ class BlogBbsPlugin implements RetroTerminalPlugin
         } else {
             $text = $text . str_repeat(' ', max(0, $width - strlen($text)));
         }
-        return '|' . $text . '|';
+        return '│' . $text . '│';
     }
 
     private function wrapBoxLine(string $text): string
     {
         $width = self::BOX_WIDTH - 2;
         $text = $this->truncate($text, $width);
-        $text = $text . str_repeat(' ', max(0, $width - strlen($text)));
-        return '|' . $text . '|';
+        if ($text === '') {
+            $text = str_repeat(' ', $width);
+        } else {
+            $text = $text . str_repeat(' ', max(0, $width - strlen($text)));
+        }
+        return '│' . $text . '│';
     }
 
     /**
@@ -573,11 +678,17 @@ class BlogBbsPlugin implements RetroTerminalPlugin
         return $messages;
     }
 
+    private function normalizeHandle(?string $handle): string
+    {
+        $handle = $this->sanitizeHandle((string)$handle);
+        return $handle ?: 'GUEST';
+    }
+
     private function sanitizeHandle(string $handle): string
     {
         $handle = preg_replace('/[^A-Za-z0-9_\-]/', '', $handle);
         $handle = substr($handle, 0, 12);
-        return strtolower($handle);
+        return strtoupper($handle);
     }
 
     private function sanitizeMessage(string $message): string

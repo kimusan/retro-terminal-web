@@ -29,6 +29,16 @@ Custom artwork is stored under `plugins/blog-bbs/ansi/`:
 
 Edit or replace these files with your own ANSI sequences; they are read verbatim, so you can use 16-color or true-color escapes.
 
+## Usage
+
+1. Run `telnet blog` from the terminal. The connection animation plays before the ANSI UI appears.
+2. When prompted, enter a handle. The on-screen prompt switches to `HANDLE@NODE>`, making it obvious that you are inside the BBS rather than the regular shell.
+3. Available commands: `LIST`, `READ <id|slug>`, `LATEST`, `MESSAGES`, `LEAVE <message>` (or `LEAVE @handle <message>`), `MENU`, and `HANGUP`.
+4. Every command clears the screen and reprints the welcome frame and menu before showing the command output, keeping the UI consistent across screen sizes.
+5. Prefix a message with `@handle` if you want to sign it differently from your logged-in handle (`LEAVE @guest Thanks for stopping by!`).
+
+The lobby message board stores entries inside `plugins/blog-bbs/data/messages.json`. If that file (or directory) is not writable, the UI automatically switches to read-only mode and surfaces a warning to the user.
+
 ## Blog Metadata
 
 Each post supports a lightweight YAML front matter block:
@@ -47,4 +57,4 @@ Content starts here in Markdown.
 
 ## Lobby Messages
 
-When `allow_messages` is true, the `LEAVE <handle> <message>` command stores sanitized notes under `plugins/blog-bbs/data/messages.json`. Handles are limited to 12 alphanumeric characters; messages truncate at 240 characters. Disable the feature by setting `allow_messages` to `false`.
+When `allow_messages` is true, the `LEAVE <message>` command stores sanitized notes under `plugins/blog-bbs/data/messages.json`. Prefix the text with `@handle` if you want to post under a different alias than your logged-in handle. Handles are limited to 12 alphanumeric characters; messages truncate at 240 characters. Disable the feature by setting `allow_messages` to `false`.

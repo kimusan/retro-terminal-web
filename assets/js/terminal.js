@@ -102,14 +102,25 @@ class RetroTerminal {
     newPrompt() {
         this.removeActiveCursor();
 
+        if (this.activePluginSession && this.activePluginSession.session && this.activePluginSession.session.awaitingHandle) {
+            const handleMsg = this.activePluginSession.session.handlePrompt || 'Enter handle:';
+            const msgEl = document.createElement('div');
+            msgEl.className = 'terminal-line terminal-dim';
+            msgEl.textContent = handleMsg;
+            this.rootEl.appendChild(msgEl);
+        }
+
         const lineEl = document.createElement('div');
         lineEl.className = 'terminal-line';
 
-        const promptText = `${this.user}@${this.host}:${this.currentPath}$ `;
+        const promptInfo = this.getPromptInfo();
         const promptSpan = document.createElement('span');
-        promptSpan.className = 'terminal-prompt';
-        promptSpan.textContent = promptText;
+        promptSpan.className = `terminal-prompt${promptInfo.className ? ' ' + promptInfo.className : ''}`;
+        promptSpan.textContent = promptInfo.text;
         lineEl.appendChild(promptSpan);
+        if (promptInfo.lineClass) {
+            lineEl.classList.add(promptInfo.lineClass);
+        }
 
         const inputSpan = document.createElement('span');
         inputSpan.className = 'terminal-input';
@@ -716,6 +727,51 @@ class RetroTerminal {
         ].join('\n');
     }
 
+    getPromptInfo() {
+        if (this.activePluginSession) {
+            return this.getPluginPromptInfo();
+        }
+        return {
+            text: `${this.user}@${this.host}:${this.currentPath}$ `,
+            className: '',
+            lineClass: ''
+        };
+    }
+
+    getPluginPromptInfo() {
+        const session = this.activePluginSession ? this.activePluginSession.session || {} : {};
+        const handle = (this.activePluginSession && this.activePluginSession.handle) || null;
+        const node = (this.activePluginSession && this.activePluginSession.node) || 'NODE';
+        const awaiting = !!(session && session.awaitingHandle);
+        const template = (session && session.promptTemplate) || '%HANDLE%@%NODE%> ';
+        const safeHandle = handle || (awaiting ? 'LOGIN' : 'GUEST');
+        const text = template
+            .replace(/%HANDLE%/gi, safeHandle)
+            .replace(/%NODE%/gi, node);
+        return {
+            text,
+            className: 'plugin-prompt',
+            lineClass: 'plugin-session-line'
+        };
+    }
+
+    sanitizePluginHandle(raw) {
+        if (!raw) return '';
+        const cleaned = raw.replace(/[^A-Za-z0-9_\-]/g, '').slice(0, 12);
+        return cleaned.toUpperCase();
+    }
+
+    buildPluginPayload(args, rawInput = null) {
+        const payload = { input: typeof rawInput === 'string' ? rawInput : args.join(' ') };
+        if (this.activePluginSession && this.activePluginSession.handle) {
+            payload.handle = this.activePluginSession.handle;
+        }
+        if (this.activePluginSession && this.activePluginSession.node) {
+            payload.node = this.activePluginSession.node;
+        }
+        return payload;
+    }
+
     getSafePluginManifest() {
         return Array.isArray(this.pluginManifest) ? this.pluginManifest : [];
     }
@@ -1315,7 +1371,7 @@ class RetroTerminal {
 
     runPluginCommand(plugin, args, invokedAs) {
         const op = (plugin && plugin.operation) || 'command';
-        const payload = { input: args.join(' ') };
+        const payload = this.buildPluginPayload(args);
         return this.requestPlugin(plugin.name, op, payload)
             .then((data) => {
                 this.renderPluginResponse(data, plugin);
@@ -1329,26 +1385,61 @@ class RetroTerminal {
     startPluginSession(plugin, args) {
         this.activePluginSession = {
             plugin,
-            session: plugin.session || {}
+            session: Object.assign({}, plugin.session || {})
         };
-        const label = plugin.title || plugin.command || plugin.name || 'remote node';
-        this.printLine(`Connecting to ${label}...`);
+        const session = this.activePluginSession;
+        session.node = (plugin.session && plugin.session.node) || this.detectPluginNode(args, plugin);
+        session.promptTemplate = (plugin.session && plugin.session.prompt_template) || '%HANDLE%@%NODE%> ';
+        session.awaitingHandle = false;
+        session.handlePrompt = null;
+        const label = session.node || plugin.title || plugin.command || plugin.name || 'remote node';
+        return this.runPluginHandshake(plugin, args, label);
+    }
+
+    detectPluginNode(args, plugin) {
+        if (args && args[0]) {
+            return args[0].toUpperCase();
+        }
+        if (plugin && Array.isArray(plugin.nodes) && plugin.nodes.length) {
+            return String(plugin.nodes[0] || '').toUpperCase();
+        }
+        return (plugin && (plugin.title || plugin.command || plugin.name)) || 'REMOTE';
+    }
+
+    async runPluginHandshake(plugin, args, label) {
+        await this.runConnectionSequence(label, plugin);
         const handshakeOp = (plugin.session && plugin.session.handshake) || 'handshake';
-        const payload = { input: args.join(' ') };
-        return this.requestPlugin(plugin.name, handshakeOp, payload)
-            .then((data) => {
-                this.renderPluginResponse(data, plugin);
-                if (!data || data.error || data.hangup) {
-                    this.endPluginSession();
-                    return;
-                }
-                this.printLine('Connected to remote plugin. Follow its prompts to disconnect.', 'terminal-dim');
-            })
-            .catch((err) => {
-                console.error(err);
-                this.printLine(`${plugin.command || plugin.name || 'plugin'}: connection failed`, 'terminal-error');
-                this.activePluginSession = null;
-            });
+        const payload = this.buildPluginPayload(args);
+        try {
+            const data = await this.requestPlugin(plugin.name, handshakeOp, payload);
+            this.renderPluginResponse(data, plugin);
+            if (!data || data.error || data.hangup) {
+                this.endPluginSession();
+                return;
+            }
+            this.printLine('Connected to remote plugin. Follow its prompts to disconnect.', 'terminal-dim');
+        } catch (err) {
+            console.error(err);
+            this.printLine(`${plugin.command || plugin.name || 'plugin'}: connection failed`, 'terminal-error');
+            this.activePluginSession = null;
+        }
+    }
+
+    async runConnectionSequence(label, plugin) {
+        const steps = (plugin && plugin.session && Array.isArray(plugin.session.connect)) ? plugin.session.connect : [
+            { text: `Connecting to ${label}...`, delay: 350 },
+            { text: 'Establishing carrier...', delay: 600 },
+            { text: 'Dialing virtual modem…', delay: 500 },
+            { text: 'Carrier detected. Negotiating ANSI...', delay: 600 }
+        ];
+        for (const step of steps) {
+            if (!step || !step.text) continue;
+            this.printLine(step.text);
+            const d = typeof step.delay === 'number' ? step.delay : 400;
+            if (d > 0) {
+                await this.sleep(d);
+            }
+        }
     }
 
     handlePluginSessionInput(command) {
@@ -1357,8 +1448,27 @@ class RetroTerminal {
         }
         const trimmed = (command || '').trim();
         const { plugin, session } = this.activePluginSession;
+        if (session.awaitingHandle) {
+            if (/^(hangup|bye|exit)$/i.test(trimmed)) {
+                this.endPluginSession('Connection closed before login.');
+                return null;
+            }
+            if (!trimmed) {
+                this.printLine('Handle cannot be empty.', 'terminal-error');
+                return null;
+            }
+            const sanitized = this.sanitizePluginHandle(trimmed);
+            if (!sanitized) {
+                this.printLine('Handle must include letters or numbers.', 'terminal-error');
+                return null;
+            }
+            this.activePluginSession.handle = sanitized;
+            session.awaitingHandle = false;
+            this.printLine(`Handle registered as ${sanitized}.`, 'terminal-dim');
+            return this.runPluginCommand(plugin, [], plugin.command);
+        }
         const commandOp = (session && session.command) || 'command';
-        const payload = { input: trimmed };
+        const payload = this.buildPluginPayload([], trimmed);
         return this.requestPlugin(plugin.name, commandOp, payload)
             .then((data) => {
                 this.renderPluginResponse(data, plugin);
@@ -1413,6 +1523,17 @@ class RetroTerminal {
         if (!payload) {
             return;
         }
+        if (payload.clear && this.activePluginSession) {
+            this.clearForPluginSession();
+        }
+        if (payload.node && this.activePluginSession) {
+            this.activePluginSession.node = payload.node;
+        }
+        if (payload.requestHandle && this.activePluginSession) {
+            this.activePluginSession.session.awaitingHandle = true;
+            this.activePluginSession.session.handlePrompt = payload.handlePrompt || 'Enter handle:';
+            this.activePluginSession.handle = null;
+        }
         const prefix = (plugin && (plugin.command || plugin.name)) || 'plugin';
         if (payload.error) {
             this.printLine(`${prefix}: ${payload.error}`, 'terminal-error');
@@ -1444,6 +1565,11 @@ class RetroTerminal {
             return;
         }
         block.split(/\r?\n/).forEach(line => this.printLine(line, className));
+    }
+
+    clearForPluginSession() {
+        this.rootEl.innerHTML = '';
+        this.cursorEl = null;
     }
 
     printLine(text = '', className = 'terminal-line') {
@@ -1946,12 +2072,12 @@ class RetroTerminal {
         this.getSafePluginManifest().forEach((plugin) => {
             if (!plugin || !plugin.name) return;
             if (plugin.command) {
-                this.pluginsByCommand.set(plugin.command, plugin);
+                this.pluginsByCommand.set(String(plugin.command).toLowerCase(), plugin);
             }
             if (Array.isArray(plugin.aliases)) {
                 plugin.aliases.forEach((alias) => {
                     if (alias) {
-                        this.pluginsByAlias.set(alias, plugin);
+                        this.pluginsByAlias.set(String(alias).toLowerCase(), plugin);
                     }
                 });
             }
@@ -1960,11 +2086,12 @@ class RetroTerminal {
 
     resolvePluginCommand(cmd) {
         if (!cmd) return null;
-        if (this.pluginsByCommand.has(cmd)) {
-            return this.pluginsByCommand.get(cmd);
+        const key = String(cmd).toLowerCase();
+        if (this.pluginsByCommand.has(key)) {
+            return this.pluginsByCommand.get(key);
         }
-        if (this.pluginsByAlias.has(cmd)) {
-            return this.pluginsByAlias.get(cmd);
+        if (this.pluginsByAlias.has(key)) {
+            return this.pluginsByAlias.get(key);
         }
         return null;
     }

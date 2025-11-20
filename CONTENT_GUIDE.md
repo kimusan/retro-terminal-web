@@ -126,6 +126,7 @@ Guidelines:
 * Keep filenames TitleCase or kebab-case for easy reading inside the terminal.
 * Avoid underscores at the start of filenames—those are treated as templates (`_POST_TEMPLATE.md`) or ignored by the plugin.
 * The BBS renders everything in a fixed 66-column layout, so short paragraphs and manual line breaks read best.
+* The telnet BBS prompts visitors for a handle and writes lobby messages to `plugins/blog-bbs/data/messages.json`; ensure that path stays writable if you want to allow posts.
 
 ---
 
@@ -273,4 +274,3 @@ It must be readable by the PHP process.
 
 Your entire site content is now fully filesystem-driven:
 Just add, remove, and edit files under `/content/`, and the terminal automatically reflects it—no backend changes required.
-

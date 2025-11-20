@@ -130,6 +130,14 @@ body {
     color: #9f9;
 }
 
+.plugin-session-line {
+    color: #9ff;
+}
+
+.plugin-session-line .terminal-prompt {
+    color: #7ff;
+}
+
 .terminal-figlet {
     white-space: pre;
     font-weight: bold;

@@ -75,6 +75,8 @@ Image files (`png`, `jpg`, `gif`, `webp`) automatically render in the terminal a
 
 Enable the `blog-bbs` plugin (see `config.php`) to unlock a faux dial-up `telnet` command. It dials into an ANSI BBS interface that lists markdown posts stored under `content/Blog/`, complete with customizable ANSI splash screens and an optional message board.
 
+When connected you'll be asked for a handle, the prompt shifts to `HANDLE@NODE>`, and every BBS command clears and redraws the fixed-width UI so it feels like a dedicated dial-in experience.
+
 ---
 
 ## **📂 Project Structure**
